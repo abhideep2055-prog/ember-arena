@@ -15,7 +15,7 @@ const razorpay = (Razorpay && process.env.RAZORPAY_KEY_ID && process.env.RAZORPA
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(__dirname));
 
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
