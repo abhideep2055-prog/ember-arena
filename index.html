@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ember Arena — Free Fire Tournaments</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <nav class="wrap">
+    <div class="logo"><span class="mark"></span><span class="disp">Ember<span class="accent">Arena</span></span></div>
+    <div class="navlinks" id="navLinks">
+      <a href="index.html#register">Register</a>
+      <a href="index.html#schedule">Schedule</a>
+      <a href="index.html#leaderboard">Leaderboard</a>
+      <a href="index.html#prizes">Prize pool</a>
+      <a href="index.html#news">News</a>
+      <a href="rules.html">Rules</a>
+    </div>
+    <div class="navcta">
+      <button class="btn btn-ghost" onclick="openLogin()">Log in</button>
+      <button class="btn btn-primary" onclick="scrollToReg()">Sign up</button>
+      <button class="hamburger" id="hamburger" aria-label="Menu"><span></span><span></span><span></span></button>
+    </div>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="zone"></div>
+  <div class="wrap hero-inner">
+    <div class="eyebrow"><span class="dot-live"></span> LIVE FREE FIRE TOURNAMENTS</div>
+    <h1>Drop in.<br>Squad up.<br><span class="accent">Get that Booyah.</span></h1>
+    <p class="lead">Register your squad, climb the leaderboard, and compete for real cash prizes in daily Free Fire tournaments — solo, duo, or full squad.</p>
+    <div class="hero-cta">
+      <button class="btn btn-primary" onclick="scrollToReg()">Register your squad</button>
+      <a href="#schedule" class="btn btn-ghost">View schedule</a>
+    </div>
+    <div class="stat-row">
+      <div><div class="num mono" id="statPlayers">18,420</div><div class="lbl">Players registered</div></div>
+      <div><div class="num mono" id="statPool">₹12,50,000</div><div class="lbl">Prize pool live</div></div>
+      <div><div class="num mono" id="statMatches">2</div><div class="lbl">Matches today</div></div>
+    </div>
+  </div>
+</section>
+
+<div class="ticker-bar">
+  <div class="ticker-track" id="tickerTrack"></div>
+</div>
+
+<section id="register">
+  <div class="wrap">
+    <div class="section-head">
+      <div><span class="tag">// registration</span><h2>Enter the arena</h2></div>
+      <p>Fill in your squad details to lock your slot for the next tournament. Confirmation is instant.</p>
+    </div>
+    <div class="reg-grid">
+      <div class="reg-card">
+        <form id="regForm">
+          <div class="form-row">
+            <label for="tournament">Tournament</label>
+            <select id="tournament"></select>
+          </div>
+          <div class="form-row">
+            <label for="ign">In-game name</label>
+            <input type="text" id="ign" placeholder="Your Free Fire IGN" required>
+          </div>
+          <div class="form-2col">
+            <div class="form-row">
+              <label for="uid">Free Fire UID</label>
+              <input type="text" id="uid" placeholder="e.g. 3821049217" required>
+            </div>
+            <div class="form-row">
+              <label for="mode">Mode</label>
+              <select id="mode">
+                <option>Solo</option>
+                <option>Duo</option>
+                <option>Squad (4)</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="email">Email</label>
+            <input type="email" id="email" placeholder="you@example.com" required>
+          </div>
+          <div class="form-row">
+            <label for="phone">Phone number</label>
+            <input type="tel" id="phone" placeholder="10-digit mobile number" required>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%; margin-top:8px;">Confirm registration</button>
+          <div class="form-msg" id="regMsg"></div>
+        </form>
+      </div>
+      <div class="why-list">
+        <div class="why-item">
+          <div class="why-num mono">01</div>
+          <div><h3>Instant slot lock</h3><p>Your squad's spot is confirmed the moment you register — no waitlists.</p></div>
+        </div>
+        <div class="why-item">
+          <div class="why-num mono">02</div>
+          <div><h3>Verified fair play</h3><p>Every match is monitored for emulator and teaming violations. See our <a href="rules.html" style="color:var(--ember)">fair play policy</a>.</p></div>
+        </div>
+        <div class="why-item">
+          <div class="why-num mono">03</div>
+          <div><h3>Same-day payouts</h3><p>Winning squads receive prize money within 24 hours of the final match.</p></div>
+        </div>
+        <div class="why-item">
+          <div class="why-num mono">04</div>
+          <div><h3>Room ID by SMS</h3><p>Custom room ID and password are sent to your phone 10 minutes before kickoff.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="schedule">
+  <div class="wrap">
+    <div class="section-head">
+      <div><span class="tag">// mission briefing</span><h2>Match schedule</h2></div>
+      <p>All times IST. Room IDs are shared 10 minutes before each match starts.</p>
+    </div>
+    <div class="match-list" id="matchList"></div>
+  </div>
+</section>
+
+<section id="leaderboard">
+  <div class="wrap">
+    <div class="section-head">
+      <div><span class="tag">// season 4 standings</span><h2>Leaderboard</h2></div>
+      <p>Ranked by total points across booyahs, kills, and survival time this season.</p>
+    </div>
+    <table class="lb">
+      <thead>
+        <tr><th>Rank</th><th>Squad</th><th>Matches</th><th>Booyahs</th><th>Kills</th><th>Points</th></tr>
+      </thead>
+      <tbody id="lbBody"></tbody>
+    </table>
+  </div>
+</section>
+
+<section id="prizes">
+  <div class="wrap">
+    <div class="section-head">
+      <div><span class="tag">// weekend grand finals</span><h2>Prize pool</h2></div>
+      <p>Payouts for the top 3 squads in the Weekend Grand Booyah tournament.</p>
+    </div>
+    <div class="prize-grid">
+      <div class="prize-card first">
+        <div class="prize-rank">1ST PLACE</div>
+        <div class="prize-amt">₹50,000</div>
+        <div class="prize-sub">+ trophy & season badge</div>
+      </div>
+      <div class="prize-card">
+        <div class="prize-rank">2ND PLACE</div>
+        <div class="prize-amt">₹25,000</div>
+        <div class="prize-sub">+ season badge</div>
+      </div>
+      <div class="prize-card">
+        <div class="prize-rank">3RD PLACE</div>
+        <div class="prize-amt">₹12,500</div>
+        <div class="prize-sub">+ season badge</div>
+      </div>
+    </div>
+    <div class="pool-total">
+      <div class="num">₹12,50,000</div>
+      <div class="lbl">Total prize pool distributed this month</div>
+    </div>
+  </div>
+</section>
+
+<section id="news">
+  <div class="wrap">
+    <div class="section-head">
+      <div><span class="tag">// dispatch</span><h2>News & updates</h2></div>
+      <p>The latest from the arena — format changes, fair play updates, and announcements.</p>
+    </div>
+    <div class="news-grid" id="newsGrid"></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-grid">
+    <div class="logo"><span class="mark"></span><span class="disp" style="font-size:18px;">Ember<span class="accent">Arena</span></span></div>
+    <div class="foot-links">
+      <a href="index.html#register">Register</a>
+      <a href="index.html#schedule">Schedule</a>
+      <a href="index.html#leaderboard">Leaderboard</a>
+      <a href="index.html#prizes">Prizes</a>
+      <a href="rules.html">Rules</a>
+    </div>
+  </div>
+  <div class="wrap copyright">© 2026 Ember Arena. Not affiliated with Garena Free Fire. All trademarks belong to their respective owners.</div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

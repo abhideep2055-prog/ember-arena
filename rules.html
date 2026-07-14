@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rules & Fair Play — Ember Arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <nav class="wrap">
+    <div class="logo"><span class="mark"></span><span class="disp">Ember<span class="accent">Arena</span></span></div>
+    <div class="navlinks" id="navLinks">
+      <a href="index.html#register">Register</a>
+      <a href="index.html#schedule">Schedule</a>
+      <a href="index.html#leaderboard">Leaderboard</a>
+      <a href="index.html#prizes">Prize pool</a>
+      <a href="index.html#news">News</a>
+      <a href="rules.html">Rules</a>
+    </div>
+    <div class="navcta">
+      <button class="btn btn-ghost" onclick="openLogin()">Log in</button>
+      <button class="btn btn-primary" onclick="scrollToReg()">Sign up</button>
+      <button class="hamburger" id="hamburger" aria-label="Menu"><span></span><span></span><span></span></button>
+    </div>
+  </nav>
+</header>
+
+<div class="page-header wrap">
+  <span class="tag">// rulebook</span>
+  <h1>Rules & fair play</h1>
+  <p>Read this before your first match. Breaking these rules can get your squad disqualified and banned from future tournaments.</p>
+</div>
+
+<section>
+  <div class="wrap">
+    <div class="rules-nav">
+      <a href="#general">General rules</a>
+      <a href="#fairplay">Fair play policy</a>
+      <a href="#scoring">Scoring system</a>
+      <a href="#payouts">Prize payouts</a>
+      <a href="#conduct">Player conduct</a>
+    </div>
+
+    <div class="rules-block" id="general">
+      <h2>General rules</h2>
+      <ol>
+        <li><b>Eligibility.</b> Players must be 16 years or older, or have parental consent, to register and receive cash prizes.</li>
+        <li><b>Registration.</b> Squads must register with a valid in-game name, Free Fire UID, email, and phone number before the registration window closes.</li>
+        <li><b>Room ID and password</b> are sent by SMS 10 minutes before the match. Late joiners are not re-invited once the match starts.</li>
+        <li><b>Device.</b> Mobile devices only. Emulators, controllers, and third-party sensitivity tools are not allowed unless the tournament explicitly says otherwise.</li>
+        <li><b>Squad changes.</b> Once registered, you may swap one player per squad up to 2 hours before match start. No swaps after that.</li>
+      </ol>
+    </div>
+
+    <div class="rules-block" id="fairplay">
+      <h2>Fair play policy</h2>
+      <ul>
+        <li>Use of hacks, aimbots, wallhacks, or any modified APK results in an immediate and permanent ban.</li>
+        <li>Teaming with another squad during a match is not allowed and will disqualify both squads.</li>
+        <li>Stream sniping — using another player's live stream to gain positional advantage — is treated as cheating.</li>
+        <li>Emulator use is detected automatically. Verified violations lead to disqualification from the current tournament and a 30-day suspension.</li>
+        <li>Suspected violations are reviewed by the tournament admin team within 24 hours, and both parties are notified of the outcome.</li>
+      </ul>
+    </div>
+
+    <div class="rules-block" id="scoring">
+      <h2>Scoring system</h2>
+      <ul>
+        <li><b>Placement points</b> are awarded based on your squad's final rank in each match (1st place earns the most).</li>
+        <li><b>Kill points</b> — each confirmed elimination adds a fixed number of points to your squad's total.</li>
+        <li><b>Booyah bonus</b> — winning the match adds a flat bonus on top of placement and kill points.</li>
+        <li>Season leaderboard rank is the sum of points across all matches played that season.</li>
+        <li>Ties are broken by total kills, then by total booyahs.</li>
+      </ul>
+    </div>
+
+    <div class="rules-block" id="payouts">
+      <h2>Prize payouts</h2>
+      <ul>
+        <li>Winning squads are paid out within 24 hours of the final match, directly to the UPI ID or bank account provided at registration.</li>
+        <li>Prize money is split evenly among squad members unless the squad leader specifies a different split at registration.</li>
+        <li>Any disqualification discovered after payout requires the prize amount to be returned in full.</li>
+        <li>Entry fees for paid tournaments are non-refundable once the registration window closes, except in the case of a cancelled match.</li>
+      </ul>
+    </div>
+
+    <div class="rules-block" id="conduct">
+      <h2>Player conduct</h2>
+      <ul>
+        <li>Harassment, hate speech, or abusive language toward other players or admins in chat or voice is not tolerated.</li>
+        <li>Impersonating another player's in-game name or UID to register is grounds for disqualification.</li>
+        <li>Admin decisions on disputes are final for that tournament. Repeated disputes without evidence may result in a warning.</li>
+        <li>Questions about a specific match result can be raised with support within 48 hours of the match ending.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-grid">
+    <div class="logo"><span class="mark"></span><span class="disp" style="font-size:18px;">Ember<span class="accent">Arena</span></span></div>
+    <div class="foot-links">
+      <a href="index.html#register">Register</a>
+      <a href="index.html#schedule">Schedule</a>
+      <a href="index.html#leaderboard">Leaderboard</a>
+      <a href="index.html#prizes">Prizes</a>
+      <a href="rules.html">Rules</a>
+    </div>
+  </div>
+  <div class="wrap copyright">© 2026 Ember Arena. Not affiliated with Garena Free Fire. All trademarks belong to their respective owners.</div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
