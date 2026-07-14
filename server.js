@@ -12,6 +12,9 @@ const razorpay = (Razorpay && process.env.RAZORPAY_KEY_ID && process.env.RAZORPA
   ? new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET })
   : null;
 
+const { initDb } = require('./db');
+const regStore = require('./registrations');
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -65,16 +68,16 @@ const DEFAULT_NEWS = [
 const BASE_PLAYER_COUNT = 18420;
 const BASE_PRIZE_POOL = 1250000;
 
-let registrations = readJSON('registrations.json', []);
 let leaderboard = readJSON('leaderboard.json', DEFAULT_LEADERBOARD);
 let schedule = readJSON('schedule.json', DEFAULT_SCHEDULE);
 let news = readJSON('news.json', DEFAULT_NEWS);
 
 // ---- Public API ----
 
-app.get('/api/stats', (req, res) => {
+app.get('/api/stats', async (req, res) => {
+  const total = await regStore.countRegistrations();
   res.json({
-    playersRegistered: BASE_PLAYER_COUNT + registrations.length,
+    playersRegistered: BASE_PLAYER_COUNT + total,
     prizePool: BASE_PRIZE_POOL,
     matchesToday: schedule.filter(m => m.day === 'TODAY').length,
   });
@@ -84,7 +87,7 @@ app.get('/api/leaderboard', (req, res) => res.json(leaderboard));
 app.get('/api/schedule', (req, res) => res.json(schedule));
 app.get('/api/news', (req, res) => res.json(news));
 
-app.post('/api/register', (req, res) => {
+app.post('/api/register', async (req, res) => {
   const { ign, uid, mode, email, phone, matchId, paymentId } = req.body || {};
   if (!ign || !uid || !email || !phone) {
     return res.status(400).json({ error: 'Missing required fields: ign, uid, email, phone.' });
@@ -93,27 +96,33 @@ app.post('/api/register', (req, res) => {
   if (!emailOk) {
     return res.status(400).json({ error: 'Enter a valid email address.' });
   }
-  if (registrations.some(r => r.uid === uid && r.matchId === (matchId || null))) {
-    return res.status(409).json({ error: 'This Free Fire UID is already registered for this match.' });
+  try {
+    const isDuplicate = await regStore.findDuplicate(uid, matchId);
+    if (isDuplicate) {
+      return res.status(409).json({ error: 'This Free Fire UID is already registered for this match.' });
+    }
+    const match = matchId ? schedule.find(m => m.id === matchId) : null;
+    if (match && match.entryFee > 0 && !paymentId) {
+      return res.status(402).json({ error: 'This match requires payment before registration.' });
+    }
+    const entry = {
+      id: Date.now().toString(),
+      ign: String(ign).slice(0, 40),
+      uid: String(uid).slice(0, 20),
+      mode: mode || 'Solo',
+      email: String(email).slice(0, 80),
+      phone: String(phone).slice(0, 20),
+      matchId: matchId || null,
+      paymentId: paymentId || null,
+      createdAt: new Date().toISOString(),
+    };
+    await regStore.addRegistration(entry);
+    const total = await regStore.countRegistrations();
+    res.json({ success: true, entry, totalPlayers: BASE_PLAYER_COUNT + total });
+  } catch (e) {
+    console.error('Registration error:', e);
+    res.status(500).json({ error: 'Something went wrong saving your registration. Please try again.' });
   }
-  const match = matchId ? schedule.find(m => m.id === matchId) : null;
-  if (match && match.entryFee > 0 && !paymentId) {
-    return res.status(402).json({ error: 'This match requires payment before registration.' });
-  }
-  const entry = {
-    id: Date.now().toString(),
-    ign: String(ign).slice(0, 40),
-    uid: String(uid).slice(0, 20),
-    mode: mode || 'Solo',
-    email: String(email).slice(0, 80),
-    phone: String(phone).slice(0, 20),
-    matchId: matchId || null,
-    paymentId: paymentId || null,
-    createdAt: new Date().toISOString(),
-  };
-  registrations.push(entry);
-  writeJSON('registrations.json', registrations);
-  res.json({ success: true, entry, totalPlayers: BASE_PLAYER_COUNT + registrations.length });
 });
 
 // ---- Payments (Razorpay) ----
@@ -180,7 +189,10 @@ app.post('/api/admin/login', (req, res) => {
 
 app.use('/api/admin', requireAdmin);
 
-app.get('/api/admin/registrations', (req, res) => res.json(registrations));
+app.get('/api/admin/registrations', async (req, res) => {
+  const data = await regStore.allRegistrations();
+  res.json(data);
+});
 
 app.post('/api/admin/leaderboard', (req, res) => {
   if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Expected an array of squads.' });
@@ -204,6 +216,11 @@ app.post('/api/admin/news', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Ember Arena server running at http://localhost:${PORT}`);
-});
+
+initDb()
+  .catch(e => console.error('Database init failed, falling back to JSON file storage:', e.message))
+  .finally(() => {
+    app.listen(PORT, () => {
+      console.log(`Ember Arena server running at http://localhost:${PORT}`);
+    });
+  });
