@@ -17,6 +17,24 @@ const regStore = require('./registrations');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const playerStore = require('./players');
+const pushStore = require('./push');
+
+let webpush;
+try { webpush = require('web-push'); } catch (e) { webpush = null; }
+
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
+const pushEnabled = !!(webpush && VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+
+if (pushEnabled) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
+    VAPID_PUBLIC_KEY,
+    VAPID_PRIVATE_KEY
+  );
+} else {
+  console.warn('⚠️  Push notifications are not configured — set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY in .env to enable match alerts.');
+}
 
 const JWT_SECRET = process.env.JWT_SECRET || 'insecure-dev-secret-change-me';
 if (!process.env.JWT_SECRET) {
@@ -186,6 +204,41 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ player: { id: req.player.sub, ign: req.player.ign, email: req.player.email, phone: req.player.phone } });
 });
 
+// ---- Push notifications ----
+
+app.get('/api/push/vapid-public-key', (req, res) => {
+  if (!pushEnabled) {
+    return res.status(503).json({ error: 'Push notifications are not configured on this server.' });
+  }
+  res.json({ publicKey: VAPID_PUBLIC_KEY });
+});
+
+app.post('/api/push/subscribe', requireAuth, async (req, res) => {
+  if (!pushEnabled) {
+    return res.status(503).json({ error: 'Push notifications are not configured on this server.' });
+  }
+  const subscription = req.body || {};
+  if (!subscription.endpoint || !subscription.keys) {
+    return res.status(400).json({ error: 'Invalid subscription.' });
+  }
+  try {
+    await pushStore.saveSubscription(req.player.sub, subscription);
+    res.json({ success: true });
+  } catch (e) {
+    if (e.message === 'NO_DB') {
+      return res.status(503).json({ error: 'Push notifications need a database connected. Set DATABASE_URL in backend/.env.' });
+    }
+    console.error('Push subscribe error:', e);
+    res.status(500).json({ error: 'Could not save your notification subscription.' });
+  }
+});
+
+app.post('/api/push/unsubscribe', requireAuth, async (req, res) => {
+  const { endpoint } = req.body || {};
+  if (endpoint) await pushStore.removeSubscription(endpoint);
+  res.json({ success: true });
+});
+
 // ---- Registration (requires a logged-in player) ----
 
 app.post('/api/register', requireAuth, async (req, res) => {
@@ -313,6 +366,62 @@ app.post('/api/admin/news', (req, res) => {
   writeJSON('news.json', news);
   res.json({ success: true });
 });
+
+// ---- Match-start notifications ----
+// Runs every minute. For any match with a real start time (set by the admin)
+// that is 9-10 minutes away and hasn't been notified yet, this pushes a
+// browser notification to everyone registered for it.
+// Note: on Render's free tier the service sleeps when idle, so this only
+// fires while the app happens to be awake (e.g. someone has the site open).
+
+async function checkUpcomingMatchesAndNotify() {
+  if (!pushEnabled) return;
+  const now = Date.now();
+  for (const match of schedule) {
+    if (!match.startAt) continue;
+    const startTime = new Date(match.startAt).getTime();
+    if (isNaN(startTime)) continue;
+    const minutesUntil = (startTime - now) / 60000;
+    if (minutesUntil > 9 && minutesUntil <= 10) {
+      try {
+        const already = await pushStore.wasNotified(match.id);
+        if (already) continue;
+        const playerIds = await regStore.playerIdsForMatch(match.id);
+        if (playerIds.length === 0) {
+          await pushStore.markNotified(match.id);
+          continue;
+        }
+        const subs = await pushStore.getSubscriptionsForPlayers(playerIds);
+        const payload = JSON.stringify({
+          title: 'Match starting soon!',
+          body: `${match.name} starts in 10 minutes. Room ID is coming by SMS.`,
+          url: '/index.html#schedule',
+        });
+        for (const sub of subs) {
+          try {
+            await webpush.sendNotification(
+              { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+              payload
+            );
+          } catch (err) {
+            if (err.statusCode === 404 || err.statusCode === 410) {
+              await pushStore.removeSubscription(sub.endpoint);
+            } else {
+              console.error('Push send error:', err.message);
+            }
+          }
+        }
+        await pushStore.markNotified(match.id);
+      } catch (e) {
+        console.error('Notification check error for match', match.id, e.message);
+      }
+    }
+  }
+}
+
+if (pushEnabled) {
+  setInterval(checkUpcomingMatchesAndNotify, 60 * 1000);
+}
 
 const PORT = process.env.PORT || 3000;
 

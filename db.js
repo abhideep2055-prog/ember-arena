@@ -36,7 +36,23 @@ async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
-  console.log('Connected to Postgres — registrations and player accounts will persist in the database.');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id SERIAL PRIMARY KEY,
+      player_id TEXT NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sent_notifications (
+      match_id TEXT PRIMARY KEY,
+      sent_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  console.log('Connected to Postgres — registrations, player accounts, and push subscriptions will persist in the database.');
 }
 
 module.exports = { pool, initDb };

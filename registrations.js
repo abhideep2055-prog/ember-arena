@@ -68,4 +68,17 @@ async function allRegistrations() {
   }
 }
 
-module.exports = { addRegistration, findDuplicate, countRegistrations, allRegistrations };
+async function playerIdsForMatch(matchId) {
+  if (pool) {
+    const res = await pool.query(
+      `SELECT DISTINCT player_id AS "playerId" FROM registrations WHERE match_id = $1 AND player_id IS NOT NULL`,
+      [matchId]
+    );
+    return res.rows.map(r => r.playerId);
+  } else {
+    const regs = readJsonRegs();
+    return [...new Set(regs.filter(r => r.matchId === matchId && r.playerId).map(r => r.playerId))];
+  }
+}
+
+module.exports = { addRegistration, findDuplicate, countRegistrations, allRegistrations, playerIdsForMatch };

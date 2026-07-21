@@ -66,8 +66,13 @@
       <form id="addMatchForm">
         <div class="form-2col">
           <div class="form-row"><label for="mDay">Day label</label><input type="text" id="mDay" placeholder="TODAY / TOMORROW / SAT" required></div>
-          <div class="form-row"><label for="mTime">Time</label><input type="text" id="mTime" placeholder="18:00" required></div>
+          <div class="form-row"><label for="mTime">Time (display text)</label><input type="text" id="mTime" placeholder="18:00" required></div>
         </div>
+        <div class="form-row">
+          <label for="mStartAt">Actual start date & time</label>
+          <input type="datetime-local" id="mStartAt" required>
+        </div>
+        <p style="color:var(--ash); font-size:11px; margin:-8px 0 16px;">Used to send the "starts in 10 minutes" alert — must be accurate.</p>
         <div class="form-row"><label for="mName">Match name</label><input type="text" id="mName" placeholder="Bermuda Squad Clash" required></div>
         <div class="form-2col">
           <div class="form-row"><label for="mSub">Subtitle</label><input type="text" id="mSub" placeholder="Squad · 48 slots"></div>
@@ -207,7 +212,7 @@
   function renderMatches(){
     document.getElementById('matchBody').innerHTML = scheduleCache.map((m, i) => `
       <tr>
-        <td class="mono">${m.day} ${m.time}</td>
+        <td class="mono">${m.day} ${m.time}${m.startAt ? '<br><span style="color:var(--ash); font-size:10px;">alerts: ' + new Date(m.startAt).toLocaleString('en-IN') + '</span>' : ''}</td>
         <td>${m.name}<br><span style="color:var(--ash); font-size:11px;">${m.sub || ''}</span></td>
         <td>${m.map || ''}</td>
         <td class="mono">${entryLabel(m.entryFee)}</td>
@@ -250,6 +255,7 @@
       id: 'm' + Date.now(),
       day: document.getElementById('mDay').value.trim().toUpperCase(),
       time: document.getElementById('mTime').value.trim(),
+      startAt: new Date(document.getElementById('mStartAt').value).toISOString(),
       name: document.getElementById('mName').value.trim(),
       sub: document.getElementById('mSub').value.trim(),
       map: document.getElementById('mMap').value.trim(),

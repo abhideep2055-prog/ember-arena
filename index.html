@@ -7,6 +7,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#0B0B0F">
 </head>
 <body>
 
@@ -23,6 +27,7 @@
     </div>
     <div class="navcta">
       <span class="user-greeting" id="userGreeting" style="display:none;"></span>
+      <button class="btn btn-ghost" id="notifyBtn" style="display:none;" onclick="enableMatchAlerts()">🔔 Match alerts</button>
       <button class="btn btn-ghost" id="logoutBtn" style="display:none;" onclick="logout()">Log out</button>
       <button class="btn btn-ghost" id="loginBtn" onclick="openAuthModal('login')">Log in</button>
       <button class="btn btn-primary" id="signupBtn" onclick="openAuthModal('signup')">Sign up</button>

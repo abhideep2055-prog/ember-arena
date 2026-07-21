@@ -206,22 +206,85 @@ function refreshAuthUI(){
   const loginBtn = document.getElementById('loginBtn');
   const signupBtn = document.getElementById('signupBtn');
   const authNotice = document.getElementById('authNotice');
+  const notifyBtn = document.getElementById('notifyBtn');
   if(player){
     if(greeting){ greeting.style.display = 'inline'; greeting.textContent = 'Hi, ' + player.ign; }
     if(logoutBtn) logoutBtn.style.display = 'inline-block';
     if(loginBtn) loginBtn.style.display = 'none';
     if(signupBtn) signupBtn.style.display = 'none';
     if(authNotice) authNotice.style.display = 'none';
+    if(notifyBtn) notifyBtn.style.display = 'inline-block';
   } else {
     if(greeting) greeting.style.display = 'none';
     if(logoutBtn) logoutBtn.style.display = 'none';
     if(loginBtn) loginBtn.style.display = 'inline-block';
     if(signupBtn) signupBtn.style.display = 'inline-block';
+    if(notifyBtn) notifyBtn.style.display = 'none';
     if(authNotice){
       authNotice.style.display = 'block';
       authNotice.className = 'form-msg err';
       authNotice.textContent = 'Log in or sign up to register for a tournament.';
     }
+  }
+}
+
+// ---- PWA install + push notifications ----
+
+function registerServiceWorker(){
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  }
+}
+
+function urlBase64ToUint8Array(base64String){
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for(let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+async function enableMatchAlerts(){
+  const btn = document.getElementById('notifyBtn');
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)){
+    alert('Notifications are not supported in this browser.');
+    return;
+  }
+  if(!getToken()){
+    openAuthModal('login');
+    return;
+  }
+  try{
+    const permission = await Notification.requestPermission();
+    if(permission !== 'granted'){
+      alert('Notifications were blocked. You can enable them from your browser/site settings any time.');
+      return;
+    }
+    const keyRes = await fetch(API_BASE + '/api/push/vapid-public-key');
+    const keyData = await keyRes.json();
+    if(!keyRes.ok) throw new Error(keyData.error || 'Push notifications are not set up yet.');
+
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if(!sub){
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
+      });
+    }
+    const res = await fetch(API_BASE + '/api/push/subscribe', {
+      method:'POST',
+      headers:{'Content-Type':'application/json', 'Authorization': 'Bearer ' + getToken()},
+      body: JSON.stringify(sub)
+    });
+    if(!res.ok){
+      const d = await res.json().catch(()=>({}));
+      throw new Error(d.error || 'Could not enable alerts.');
+    }
+    if(btn){ btn.textContent = '🔔 Alerts on'; btn.disabled = true; }
+  }catch(err){
+    alert(err.message || 'Could not enable match alerts.');
   }
 }
 
@@ -455,4 +518,5 @@ document.addEventListener('DOMContentLoaded', ()=>{
   initRegForm();
   injectAuthModal();
   refreshAuthUI();
+  registerServiceWorker();
 });
