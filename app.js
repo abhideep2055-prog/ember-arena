@@ -1,37 +1,11 @@
 const API_BASE = window.location.origin.startsWith('file') ? '' : '';
 
 const FALLBACK = {
-  stats: { playersRegistered: 18420, prizePool: 1250000, matchesToday: 2 },
-  leaderboard: [
-    {squad:"TridentFF", tag:"TFF", matches:24, booyahs:9, kills:212, pts:1840},
-    {squad:"NoMercySquad", tag:"NMS", matches:22, booyahs:7, kills:198, pts:1705},
-    {squad:"Alpha7", tag:"A7", matches:25, booyahs:6, kills:220, pts:1690},
-    {squad:"IceKingFF", tag:"ICE", matches:20, booyahs:6, kills:175, pts:1520},
-    {squad:"VenomRiders", tag:"VR", matches:21, booyahs:5, kills:180, pts:1465},
-    {squad:"GhostProtocol", tag:"GP", matches:19, booyahs:4, kills:160, pts:1310},
-    {squad:"Blitzkrieg", tag:"BLZ", matches:18, booyahs:4, kills:150, pts:1260},
-    {squad:"Nightfall", tag:"NF", matches:17, booyahs:3, kills:140, pts:1105},
-  ],
-  schedule: [
-    {id:"m1", day:"TODAY", time:"18:00", name:"Bermuda Squad Clash", sub:"Squad · 48 slots", map:"Bermuda", entryFee:0, status:"live"},
-    {id:"m2", day:"TODAY", time:"20:30", name:"Purgatory Duo Showdown", sub:"Duo · 24 slots", map:"Purgatory", entryFee:20, status:"open"},
-    {id:"m3", day:"TOMORROW", time:"17:00", name:"Bermuda Solo Sprint", sub:"Solo · 50 slots", map:"Bermuda", entryFee:0, status:"open"},
-    {id:"m4", day:"TOMORROW", time:"21:00", name:"Kalahari Squad Finals", sub:"Squad · 12 slots", map:"Kalahari", entryFee:50, status:"soon"},
-    {id:"m5", day:"SAT", time:"19:00", name:"Weekend Grand Booyah", sub:"Squad · 48 slots", map:"Bermuda", entryFee:100, status:"soon"},
-  ],
-  news: [
-    {date:"12 JUL 2026", cat:"Update", title:"Season 4 leaderboard reset", body:"Points reset for all squads. New season runs through August with a bigger prize pool."},
-    {date:"09 JUL 2026", cat:"Announcement", title:"Weekend Grand Booyah added", body:"A new weekly squad tournament with a ₹87,500 combined payout for the top 3."},
-    {date:"03 JUL 2026", cat:"Fair play", title:"Emulator detection upgraded", body:"Stricter checks are now live across all ranked matches to keep the leaderboard fair."},
-  ],
-  kills: [
-    "SHADOWX eliminated GHOST_99 in Bermuda",
-    "Squad TridentFF secured a Booyah in Purgatory",
-    "VENOM.RJ hit a headshot double-kill in Kalahari",
-    "NoMercySquad wiped 3 players in the final zone",
-    "IceKingFF took MVP with 11 kills",
-    "Team Alpha7 clutched a 1v3 in the last circle"
-  ]
+  stats: { playersRegistered: 0, prizePool: 0, matchesToday: 0 },
+  leaderboard: [],
+  schedule: [],
+  news: [],
+  kills: []
 };
 
 async function apiGet(path, fallbackKey){
@@ -310,6 +284,10 @@ async function initLeaderboard(){
   const body = document.getElementById('lbBody');
   if(!body) return;
   const leaderboard = await apiGet('/api/leaderboard', 'leaderboard');
+  if(leaderboard.length === 0){
+    body.innerHTML = `<tr><td colspan="6" style="color:var(--ash); text-align:center; padding:32px;">No squads on the leaderboard yet — check back after the first tournament.</td></tr>`;
+    return;
+  }
   body.innerHTML = leaderboard.map((r,i)=>{
     const rankClass = i===0?'r1':i===1?'r2':i===2?'r3':'';
     return `<tr>
@@ -332,27 +310,33 @@ async function initSchedule(){
   const schedule = await apiGet('/api/schedule', 'schedule');
   scheduleCache = schedule;
   if(list){
-    const badgeMap = {
-      live: '<span class="badge badge-live">Live now</span>',
-      open: '<span class="badge badge-open">Registration open</span>',
-      soon: '<span class="badge badge-soon">Opens soon</span>'
-    };
-    list.innerHTML = `<div class="match-row head"><div>Time</div><div>Match</div><div>Map</div><div>Entry</div><div>Status</div></div>` +
-      schedule.map(m => `
-        <div class="match-row">
-          <div class="match-date">${m.day}<br>${m.time}</div>
-          <div class="match-name">${m.name}<span class="sub">${m.sub}</span></div>
-          <div>${m.map}</div>
-          <div class="mono">${entryLabel(m.entryFee)}</div>
-          <div>${badgeMap[m.status] || badgeMap.soon}</div>
-        </div>
-      `).join('');
+    if(schedule.length === 0){
+      list.innerHTML = `<div style="color:var(--ash); text-align:center; padding:32px; background:var(--panel);">No tournaments scheduled right now — check back soon.</div>`;
+    } else {
+      const badgeMap = {
+        live: '<span class="badge badge-live">Live now</span>',
+        open: '<span class="badge badge-open">Registration open</span>',
+        soon: '<span class="badge badge-soon">Opens soon</span>'
+      };
+      list.innerHTML = `<div class="match-row head"><div>Time</div><div>Match</div><div>Map</div><div>Entry</div><div>Status</div></div>` +
+        schedule.map(m => `
+          <div class="match-row">
+            <div class="match-date">${m.day}<br>${m.time}</div>
+            <div class="match-name">${m.name}<span class="sub">${m.sub}</span></div>
+            <div>${m.map}</div>
+            <div class="mono">${entryLabel(m.entryFee)}</div>
+            <div>${badgeMap[m.status] || badgeMap.soon}</div>
+          </div>
+        `).join('');
+    }
   }
   const select = document.getElementById('tournament');
   if(select){
-    select.innerHTML = schedule.map(m =>
-      `<option value="${m.id}">${m.day} ${m.time} — ${m.name} (${entryLabel(m.entryFee)})</option>`
-    ).join('');
+    select.innerHTML = schedule.length === 0
+      ? `<option value="">No tournaments available yet</option>`
+      : schedule.map(m =>
+          `<option value="${m.id}">${m.day} ${m.time} — ${m.name} (${entryLabel(m.entryFee)})</option>`
+        ).join('');
   }
 }
 
@@ -360,6 +344,10 @@ async function initNews(){
   const grid = document.getElementById('newsGrid');
   if(!grid) return;
   const news = await apiGet('/api/news', 'news');
+  if(news.length === 0){
+    grid.innerHTML = `<div style="color:var(--ash); grid-column:1/-1; text-align:center; padding:32px;">No news yet — updates will show up here.</div>`;
+    return;
+  }
   grid.innerHTML = news.map(n => `
     <div class="news-card">
       <span class="badge badge-open news-cat">${n.cat}</span>

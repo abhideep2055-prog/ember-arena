@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
@@ -18,6 +17,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const playerStore = require('./players');
 const pushStore = require('./push');
+const contentStore = require('./content');
 
 let webpush;
 try { webpush = require('web-push'); } catch (e) { webpush = null; }
@@ -66,62 +66,14 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname));
 
-const DATA_DIR = path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-
-function readJSON(file, fallback) {
-  const p = path.join(DATA_DIR, file);
-  if (!fs.existsSync(p)) {
-    fs.writeFileSync(p, JSON.stringify(fallback, null, 2));
-    return fallback;
-  }
-  try {
-    return JSON.parse(fs.readFileSync(p, 'utf-8'));
-  } catch (e) {
-    return fallback;
-  }
-}
-
-function writeJSON(file, data) {
-  fs.writeFileSync(path.join(DATA_DIR, file), JSON.stringify(data, null, 2));
-}
-
-const DEFAULT_LEADERBOARD = [
-  { squad: "TridentFF", tag: "TFF", matches: 24, booyahs: 9, kills: 212, pts: 1840 },
-  { squad: "NoMercySquad", tag: "NMS", matches: 22, booyahs: 7, kills: 198, pts: 1705 },
-  { squad: "Alpha7", tag: "A7", matches: 25, booyahs: 6, kills: 220, pts: 1690 },
-  { squad: "IceKingFF", tag: "ICE", matches: 20, booyahs: 6, kills: 175, pts: 1520 },
-  { squad: "VenomRiders", tag: "VR", matches: 21, booyahs: 5, kills: 180, pts: 1465 },
-  { squad: "GhostProtocol", tag: "GP", matches: 19, booyahs: 4, kills: 160, pts: 1310 },
-  { squad: "Blitzkrieg", tag: "BLZ", matches: 18, booyahs: 4, kills: 150, pts: 1260 },
-  { squad: "Nightfall", tag: "NF", matches: 17, booyahs: 3, kills: 140, pts: 1105 },
-];
-
-const DEFAULT_SCHEDULE = [
-  { id: "m1", day: "TODAY", time: "18:00", name: "Bermuda Squad Clash", sub: "Squad · 48 slots", map: "Bermuda", entryFee: 0, status: "live" },
-  { id: "m2", day: "TODAY", time: "20:30", name: "Purgatory Duo Showdown", sub: "Duo · 24 slots", map: "Purgatory", entryFee: 20, status: "open" },
-  { id: "m3", day: "TOMORROW", time: "17:00", name: "Bermuda Solo Sprint", sub: "Solo · 50 slots", map: "Bermuda", entryFee: 0, status: "open" },
-  { id: "m4", day: "TOMORROW", time: "21:00", name: "Kalahari Squad Finals", sub: "Squad · 12 slots", map: "Kalahari", entryFee: 50, status: "soon" },
-  { id: "m5", day: "SAT", time: "19:00", name: "Weekend Grand Booyah", sub: "Squad · 48 slots", map: "Bermuda", entryFee: 100, status: "soon" },
-];
-
-const DEFAULT_NEWS = [
-  { date: "12 JUL 2026", cat: "Update", title: "Season 4 leaderboard reset", body: "Points reset for all squads. New season runs through August with a bigger prize pool." },
-  { date: "09 JUL 2026", cat: "Announcement", title: "Weekend Grand Booyah added", body: "A new weekly squad tournament with a ₹87,500 combined payout for the top 3." },
-  { date: "03 JUL 2026", cat: "Fair play", title: "Emulator detection upgraded", body: "Stricter checks are now live across all ranked matches to keep the leaderboard fair." },
-];
-
 const BASE_PLAYER_COUNT = 18420;
 const BASE_PRIZE_POOL = 1250000;
-
-let leaderboard = readJSON('leaderboard.json', DEFAULT_LEADERBOARD);
-let schedule = readJSON('schedule.json', DEFAULT_SCHEDULE);
-let news = readJSON('news.json', DEFAULT_NEWS);
 
 // ---- Public API ----
 
 app.get('/api/stats', async (req, res) => {
   const total = await regStore.countRegistrations();
+  const schedule = await contentStore.getContent('schedule', []);
   res.json({
     playersRegistered: BASE_PLAYER_COUNT + total,
     prizePool: BASE_PRIZE_POOL,
@@ -129,9 +81,15 @@ app.get('/api/stats', async (req, res) => {
   });
 });
 
-app.get('/api/leaderboard', (req, res) => res.json(leaderboard));
-app.get('/api/schedule', (req, res) => res.json(schedule));
-app.get('/api/news', (req, res) => res.json(news));
+app.get('/api/leaderboard', async (req, res) => {
+  res.json(await contentStore.getContent('leaderboard', []));
+});
+app.get('/api/schedule', async (req, res) => {
+  res.json(await contentStore.getContent('schedule', []));
+});
+app.get('/api/news', async (req, res) => {
+  res.json(await contentStore.getContent('news', []));
+});
 
 // ---- Player accounts (signup / login) ----
 
@@ -252,7 +210,7 @@ app.post('/api/register', requireAuth, async (req, res) => {
     if (isDuplicate) {
       return res.status(409).json({ error: 'This Free Fire UID is already registered for this match.' });
     }
-    const match = matchId ? schedule.find(m => m.id === matchId) : null;
+    const match = matchId ? (await contentStore.getContent('schedule', [])).find(m => m.id === matchId) : null;
     if (match && match.entryFee > 0 && !paymentId) {
       return res.status(402).json({ error: 'This match requires payment before registration.' });
     }
@@ -346,24 +304,21 @@ app.get('/api/admin/registrations', async (req, res) => {
   res.json(data);
 });
 
-app.post('/api/admin/leaderboard', (req, res) => {
+app.post('/api/admin/leaderboard', async (req, res) => {
   if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Expected an array of squads.' });
-  leaderboard = req.body;
-  writeJSON('leaderboard.json', leaderboard);
+  await contentStore.setContent('leaderboard', req.body);
   res.json({ success: true });
 });
 
-app.post('/api/admin/schedule', (req, res) => {
+app.post('/api/admin/schedule', async (req, res) => {
   if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Expected an array of matches.' });
-  schedule = req.body;
-  writeJSON('schedule.json', schedule);
+  await contentStore.setContent('schedule', req.body);
   res.json({ success: true });
 });
 
-app.post('/api/admin/news', (req, res) => {
+app.post('/api/admin/news', async (req, res) => {
   if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Expected an array of news items.' });
-  news = req.body;
-  writeJSON('news.json', news);
+  await contentStore.setContent('news', req.body);
   res.json({ success: true });
 });
 
@@ -377,6 +332,7 @@ app.post('/api/admin/news', (req, res) => {
 async function checkUpcomingMatchesAndNotify() {
   if (!pushEnabled) return;
   const now = Date.now();
+  const schedule = await contentStore.getContent('schedule', []);
   for (const match of schedule) {
     if (!match.startAt) continue;
     const startTime = new Date(match.startAt).getTime();
