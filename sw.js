@@ -10,6 +10,13 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
+// A no-op fetch handler. Some browsers only consider a site "installable"
+// if its service worker responds to fetch — we deliberately still let
+// everything go straight to the network since tournament data must stay live.
+self.addEventListener('fetch', (event) => {
+  event.respondWith(fetch(event.request));
+});
+
 self.addEventListener('push', (event) => {
   let data = { title: 'Ember Arena', body: 'You have a new update.' };
   try {

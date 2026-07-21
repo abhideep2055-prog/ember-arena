@@ -50,7 +50,8 @@ nav.wrap{ display:flex; align-items:center; justify-content:space-between; heigh
 .btn-primary:hover{ background:#ff7f38; }
 .btn-ghost{ border-color:var(--line); color:var(--white); background:transparent; }
 .btn-ghost:hover{ border-color:var(--ember); color:var(--ember); }
-.navcta{ display:flex; gap:12px; align-items:center; }
+.navcta{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+.navcta .btn{ padding:10px 16px; font-size:12px; }
 .hamburger{ display:none; flex-direction:column; gap:5px; background:none; border:none; cursor:pointer; padding:8px; }
 .hamburger span{ width:22px; height:2px; background:var(--white); display:block; }
 
@@ -197,6 +198,7 @@ footer{ padding:48px 0; }
 .copyright{ color:var(--ash); font-size:12px; margin-top:24px; }
 
 @media(max-width:900px){
+  nav.wrap{ height:auto; padding-top:12px; padding-bottom:12px; }
   .hero h1{ font-size:38px; }
   .reg-grid{ grid-template-columns:1fr; }
   .prize-grid{ grid-template-columns:1fr; }
