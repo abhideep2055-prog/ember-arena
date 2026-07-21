@@ -47,6 +47,7 @@
   <div class="admin-tabs">
     <button class="admin-tab active" id="tabRegs" onclick="switchAdminTab('regs')">Registrations</button>
     <button class="admin-tab" id="tabMatches" onclick="switchAdminTab('matches')">Tournaments</button>
+    <button class="admin-tab" id="tabLeaderboard" onclick="switchAdminTab('leaderboard')">Leaderboard</button>
   </div>
 
   <div class="admin-panel active" id="panelRegs">
@@ -91,6 +92,33 @@
       <tbody id="matchBody"></tbody>
     </table>
   </div>
+
+  <div class="admin-panel" id="panelLeaderboard">
+    <div class="reg-card" style="margin-bottom:24px;">
+      <h3 style="font-size:15px; margin-bottom:16px;">Add a squad</h3>
+      <form id="addSquadForm">
+        <div class="form-2col">
+          <div class="form-row"><label for="sName">Squad name</label><input type="text" id="sName" placeholder="TridentFF" required></div>
+          <div class="form-row"><label for="sTag">Short tag (2-4 letters)</label><input type="text" id="sTag" placeholder="TFF" maxlength="4" required></div>
+        </div>
+        <div class="form-2col">
+          <div class="form-row"><label for="sMatches">Matches played</label><input type="number" id="sMatches" min="0" value="0"></div>
+          <div class="form-row"><label for="sBooyahs">Booyahs (wins)</label><input type="number" id="sBooyahs" min="0" value="0"></div>
+        </div>
+        <div class="form-2col">
+          <div class="form-row"><label for="sKills">Total kills</label><input type="number" id="sKills" min="0" value="0"></div>
+          <div class="form-row"><label for="sPts">Points</label><input type="number" id="sPts" min="0" value="0"></div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Add squad</button>
+        <div class="form-msg" id="squadMsg"></div>
+      </form>
+    </div>
+    <p style="color:var(--ash); font-size:12px; margin-bottom:8px;">Squads are shown ranked by points, highest first.</p>
+    <table class="admin-table">
+      <thead><tr><th>Rank</th><th>Squad</th><th>Matches</th><th>Booyahs</th><th>Kills</th><th>Points</th><th></th></tr></thead>
+      <tbody id="squadBody"></tbody>
+    </table>
+  </div>
 </div>
 
 <script>
@@ -99,12 +127,14 @@
   function getKey(){ return sessionStorage.getItem('ember_admin_key'); }
 
   function switchAdminTab(tab){
-    const isRegs = tab === 'regs';
-    document.getElementById('panelRegs').classList.toggle('active', isRegs);
-    document.getElementById('panelMatches').classList.toggle('active', !isRegs);
-    document.getElementById('tabRegs').classList.toggle('active', isRegs);
-    document.getElementById('tabMatches').classList.toggle('active', !isRegs);
-    if(!isRegs) loadSchedule();
+    document.getElementById('panelRegs').classList.toggle('active', tab === 'regs');
+    document.getElementById('panelMatches').classList.toggle('active', tab === 'matches');
+    document.getElementById('panelLeaderboard').classList.toggle('active', tab === 'leaderboard');
+    document.getElementById('tabRegs').classList.toggle('active', tab === 'regs');
+    document.getElementById('tabMatches').classList.toggle('active', tab === 'matches');
+    document.getElementById('tabLeaderboard').classList.toggle('active', tab === 'leaderboard');
+    if(tab === 'matches') loadSchedule();
+    if(tab === 'leaderboard') loadLeaderboard();
   }
 
   async function doLogin(){
@@ -236,6 +266,88 @@
       document.getElementById('mFee').value = 0;
     }catch(err){
       scheduleCache.pop();
+      msg.textContent = err.message;
+      msg.className = 'form-msg err';
+    }
+  });
+
+  // ---- Leaderboard management ----
+
+  let leaderboardCache = [];
+
+  async function loadLeaderboard(){
+    try{
+      const res = await fetch(API_BASE + '/api/leaderboard');
+      leaderboardCache = await res.json();
+      renderSquads();
+    }catch(e){
+      alert('Could not load the leaderboard.');
+    }
+  }
+
+  function renderSquads(){
+    const sorted = leaderboardCache.slice().sort((a, b) => b.pts - a.pts);
+    document.getElementById('squadBody').innerHTML = sorted.map((s, i) => `
+      <tr>
+        <td class="mono">#${i + 1}</td>
+        <td>${s.squad} <span style="color:var(--ash); font-size:11px;">(${s.tag})</span></td>
+        <td class="mono">${s.matches}</td>
+        <td class="mono">${s.booyahs}</td>
+        <td class="mono">${s.kills}</td>
+        <td class="mono">${s.pts}</td>
+        <td><button type="button" class="btn btn-ghost btn-sm" onclick="deleteSquad('${s.squad.replace(/'/g, "\\'")}')">Delete</button></td>
+      </tr>
+    `).join('');
+  }
+
+  async function saveLeaderboard(){
+    const key = getKey();
+    const res = await fetch(API_BASE + '/api/admin/leaderboard', {
+      method:'POST',
+      headers:{'Content-Type':'application/json', 'x-admin-key': key},
+      body: JSON.stringify(leaderboardCache)
+    });
+    if(!res.ok){
+      const d = await res.json().catch(()=>({}));
+      throw new Error(d.error || 'Could not save changes.');
+    }
+  }
+
+  async function deleteSquad(squadName){
+    if(!confirm('Delete this squad from the leaderboard?')) return;
+    const idx = leaderboardCache.findIndex(s => s.squad === squadName);
+    if(idx === -1) return;
+    const removed = leaderboardCache.splice(idx, 1);
+    try{
+      await saveLeaderboard();
+      renderSquads();
+    }catch(e){
+      leaderboardCache.splice(idx, 0, removed[0]);
+      alert(e.message);
+    }
+  }
+
+  document.getElementById('addSquadForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const msg = document.getElementById('squadMsg');
+    msg.className = 'form-msg'; msg.textContent = '';
+    const newSquad = {
+      squad: document.getElementById('sName').value.trim(),
+      tag: document.getElementById('sTag').value.trim().toUpperCase(),
+      matches: Number(document.getElementById('sMatches').value) || 0,
+      booyahs: Number(document.getElementById('sBooyahs').value) || 0,
+      kills: Number(document.getElementById('sKills').value) || 0,
+      pts: Number(document.getElementById('sPts').value) || 0,
+    };
+    leaderboardCache.push(newSquad);
+    try{
+      await saveLeaderboard();
+      msg.textContent = 'Squad added.';
+      msg.className = 'form-msg ok';
+      renderSquads();
+      this.reset();
+    }catch(err){
+      leaderboardCache.pop();
       msg.textContent = err.message;
       msg.className = 'form-msg err';
     }
