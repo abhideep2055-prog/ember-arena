@@ -25,7 +25,18 @@ async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
-  console.log('Connected to Postgres — registrations will persist in the database.');
+  await pool.query(`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS player_id TEXT;`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS players (
+      id TEXT PRIMARY KEY,
+      ign TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      phone TEXT,
+      password_hash TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  console.log('Connected to Postgres — registrations and player accounts will persist in the database.');
 }
 
 module.exports = { pool, initDb };

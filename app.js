@@ -64,8 +64,155 @@ function scrollToReg(){
   else window.location.href = 'index.html#register';
 }
 
-function openLogin(){
-  alert('Log in flow — connect this to your auth provider (email/OTP, Google, etc).');
+// ---- Player accounts (login / signup) ----
+
+const TOKEN_KEY = 'ember_token';
+const PLAYER_KEY = 'ember_player';
+
+function getToken(){ return localStorage.getItem(TOKEN_KEY); }
+function getPlayer(){
+  try{ return JSON.parse(localStorage.getItem(PLAYER_KEY) || 'null'); }
+  catch(e){ return null; }
+}
+function setSession(token, player){
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(PLAYER_KEY, JSON.stringify(player));
+}
+function clearSession(){
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(PLAYER_KEY);
+}
+
+function injectAuthModal(){
+  if(document.getElementById('authModal')) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div id="authModal" class="auth-overlay">
+      <div class="auth-modal">
+        <button class="auth-close" onclick="closeAuthModal()" aria-label="Close">&times;</button>
+        <div class="auth-tabs">
+          <button type="button" class="auth-tab active" id="tabLogin" onclick="switchAuthTab('login')">Log in</button>
+          <button type="button" class="auth-tab" id="tabSignup" onclick="switchAuthTab('signup')">Sign up</button>
+        </div>
+        <form id="loginForm" class="auth-form">
+          <div class="form-row"><label for="loginEmail">Email</label><input type="email" id="loginEmail" required></div>
+          <div class="form-row"><label for="loginPassword">Password</label><input type="password" id="loginPassword" required></div>
+          <button type="submit" class="btn btn-primary" style="width:100%;">Log in</button>
+          <div class="form-msg" id="loginMsg"></div>
+        </form>
+        <form id="signupForm" class="auth-form" style="display:none;">
+          <div class="form-row"><label for="signupIgn">In-game name</label><input type="text" id="signupIgn" required></div>
+          <div class="form-row"><label for="signupEmail">Email</label><input type="email" id="signupEmail" required></div>
+          <div class="form-row"><label for="signupPhone">Phone number</label><input type="tel" id="signupPhone" required></div>
+          <div class="form-row"><label for="signupPassword">Password</label><input type="password" id="signupPassword" required minlength="6"></div>
+          <button type="submit" class="btn btn-primary" style="width:100%;">Create account</button>
+          <div class="form-msg" id="signupMsg"></div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+
+  document.getElementById('authModal').addEventListener('click', function(e){
+    if(e.target === this) closeAuthModal();
+  });
+
+  document.getElementById('loginForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const msg = document.getElementById('loginMsg');
+    msg.className = 'form-msg'; msg.textContent = '';
+    try{
+      const res = await fetch(API_BASE + '/api/auth/login', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          email: document.getElementById('loginEmail').value.trim(),
+          password: document.getElementById('loginPassword').value
+        })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Login failed.');
+      setSession(data.token, data.player);
+      refreshAuthUI();
+      closeAuthModal();
+      this.reset();
+    }catch(err){
+      msg.textContent = err.message;
+      msg.className = 'form-msg err';
+    }
+  });
+
+  document.getElementById('signupForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const msg = document.getElementById('signupMsg');
+    msg.className = 'form-msg'; msg.textContent = '';
+    try{
+      const res = await fetch(API_BASE + '/api/auth/signup', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          ign: document.getElementById('signupIgn').value.trim(),
+          email: document.getElementById('signupEmail').value.trim(),
+          phone: document.getElementById('signupPhone').value.trim(),
+          password: document.getElementById('signupPassword').value
+        })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Sign up failed.');
+      setSession(data.token, data.player);
+      refreshAuthUI();
+      closeAuthModal();
+      this.reset();
+    }catch(err){
+      msg.textContent = err.message;
+      msg.className = 'form-msg err';
+    }
+  });
+}
+
+function openAuthModal(tab){
+  injectAuthModal();
+  document.getElementById('authModal').style.display = 'flex';
+  switchAuthTab(tab || 'login');
+}
+function closeAuthModal(){
+  const m = document.getElementById('authModal');
+  if(m) m.style.display = 'none';
+}
+function switchAuthTab(tab){
+  const isLogin = tab === 'login';
+  document.getElementById('loginForm').style.display = isLogin ? 'flex' : 'none';
+  document.getElementById('signupForm').style.display = isLogin ? 'none' : 'flex';
+  document.getElementById('tabLogin').classList.toggle('active', isLogin);
+  document.getElementById('tabSignup').classList.toggle('active', !isLogin);
+}
+function logout(){
+  clearSession();
+  refreshAuthUI();
+}
+
+function refreshAuthUI(){
+  const player = getPlayer();
+  const greeting = document.getElementById('userGreeting');
+  const logoutBtn = document.getElementById('logoutBtn');
+  const loginBtn = document.getElementById('loginBtn');
+  const signupBtn = document.getElementById('signupBtn');
+  const authNotice = document.getElementById('authNotice');
+  if(player){
+    if(greeting){ greeting.style.display = 'inline'; greeting.textContent = 'Hi, ' + player.ign; }
+    if(logoutBtn) logoutBtn.style.display = 'inline-block';
+    if(loginBtn) loginBtn.style.display = 'none';
+    if(signupBtn) signupBtn.style.display = 'none';
+    if(authNotice) authNotice.style.display = 'none';
+  } else {
+    if(greeting) greeting.style.display = 'none';
+    if(logoutBtn) logoutBtn.style.display = 'none';
+    if(loginBtn) loginBtn.style.display = 'inline-block';
+    if(signupBtn) signupBtn.style.display = 'inline-block';
+    if(authNotice){
+      authNotice.style.display = 'block';
+      authNotice.className = 'form-msg err';
+      authNotice.textContent = 'Log in or sign up to register for a tournament.';
+    }
+  }
 }
 
 async function initTicker(){
@@ -153,12 +300,19 @@ async function initNews(){
 async function submitRegistration(payload, msg, form){
   const res = await fetch(API_BASE + '/api/register', {
     method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:{'Content-Type':'application/json', 'Authorization': 'Bearer ' + getToken()},
     body: JSON.stringify(payload)
   });
   const data = await res.json();
+  if(res.status === 401){
+    clearSession();
+    refreshAuthUI();
+    openAuthModal('login');
+    throw new Error(data.error || 'Please log in again.');
+  }
   if(!res.ok) throw new Error(data.error || 'Registration failed');
-  msg.textContent = `You're in, ${payload.ign}. Room ID and password will be sent by SMS 10 minutes before your match.`;
+  const player = getPlayer();
+  msg.textContent = `You're in${player ? ', ' + player.ign : ''}. Room ID and password will be sent by SMS 10 minutes before your match.`;
   msg.className = 'form-msg ok';
   if(data.totalPlayers){
     const playersEl = document.getElementById('statPlayers');
@@ -185,6 +339,7 @@ async function payAndRegister(match, payload, msg, form){
     msg.className = 'form-msg err';
     return;
   }
+  const player = getPlayer();
   let order;
   try{
     const orderRes = await fetch(API_BASE + '/api/payment/create-order', {
@@ -205,7 +360,7 @@ async function payAndRegister(match, payload, msg, form){
     order_id: order.orderId,
     name: 'Ember Arena',
     description: match.name,
-    prefill: { name: payload.ign, email: payload.email, contact: payload.phone },
+    prefill: { name: player ? player.ign : '', email: player ? player.email : '', contact: player ? player.phone : '' },
     theme: { color: '#FF6B1A' },
     handler: async function(response){
       try{
@@ -249,18 +404,19 @@ function initRegForm(){
   form.addEventListener('submit', async function(e){
     e.preventDefault();
     const msg = document.getElementById('regMsg');
+    msg.className = 'form-msg';
+    msg.textContent = '';
+    if(!getToken()){
+      openAuthModal('login');
+      return;
+    }
     const select = document.getElementById('tournament');
     const matchId = select ? select.value : null;
     const match = scheduleCache.find(m => m.id === matchId) || null;
     const payload = {
-      ign: document.getElementById('ign').value.trim(),
       uid: document.getElementById('uid').value.trim(),
       mode: document.getElementById('mode').value,
-      email: document.getElementById('email').value.trim(),
-      phone: document.getElementById('phone').value.trim(),
     };
-    msg.className = 'form-msg';
-    msg.textContent = '';
     try{
       if(match && match.entryFee > 0){
         await payAndRegister(match, payload, msg, form);
@@ -282,4 +438,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
   initSchedule();
   initNews();
   initRegForm();
+  injectAuthModal();
+  refreshAuthUI();
 });

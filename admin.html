@@ -17,13 +17,19 @@
   table.admin-table td{ padding:10px 12px; border-bottom:1px solid var(--line); font-size:13px; }
   .top-row{ display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }
   .err-box{ font-size:13px; color:var(--blood); margin-top:10px; display:none; }
-</style>
+  .admin-tabs{ display:flex; gap:4px; margin-bottom:28px; border-bottom:1px solid var(--line); }
+  .admin-tab{ background:none; border:none; color:var(--ash); font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; padding:12px 18px; cursor:pointer; border-bottom:2px solid transparent; font-family:'Inter',sans-serif; }
+  .admin-tab.active{ color:var(--ember); border-bottom-color:var(--ember); }
+  .admin-panel{ display:none; }
+  .admin-panel.active{ display:block; }
+  .row-actions{ display:flex; gap:8px; }
+  .btn-sm{ padding:6px 12px; font-size:11px; }</style>
 </head>
 <body>
 
 <div id="loginView" class="login-card">
   <h1 class="disp" style="font-size:20px;">Admin access</h1>
-  <p>Enter the admin key from your server's <code>.env</code> file to view registrations.</p>
+  <p>Enter the admin key from your server's <code>.env</code> file to manage the tournament site.</p>
   <div class="form-row">
     <label for="adminKey">Admin key</label>
     <input type="password" id="adminKey" placeholder="Your ADMIN_KEY">
@@ -34,22 +40,72 @@
 
 <div id="dashView" class="admin-wrap" style="display:none;">
   <div class="top-row">
-    <div><span class="tag">// admin</span><h1 class="disp" style="font-size:26px;">Registrations</h1></div>
+    <div><span class="tag">// admin</span><h1 class="disp" style="font-size:26px;">Dashboard</h1></div>
     <button class="btn btn-ghost" onclick="doLogout()">Log out</button>
   </div>
-  <p id="countLabel" style="color:var(--ash); font-size:13px; margin-bottom:8px;"></p>
-  <table class="admin-table">
-    <thead>
-      <tr><th>IGN</th><th>UID</th><th>Mode</th><th>Email</th><th>Phone</th><th>Match</th><th>Paid</th><th>Registered</th></tr>
-    </thead>
-    <tbody id="regBody"></tbody>
-  </table>
+
+  <div class="admin-tabs">
+    <button class="admin-tab active" id="tabRegs" onclick="switchAdminTab('regs')">Registrations</button>
+    <button class="admin-tab" id="tabMatches" onclick="switchAdminTab('matches')">Tournaments</button>
+  </div>
+
+  <div class="admin-panel active" id="panelRegs">
+    <p id="countLabel" style="color:var(--ash); font-size:13px; margin-bottom:8px;"></p>
+    <table class="admin-table">
+      <thead>
+        <tr><th>IGN</th><th>UID</th><th>Mode</th><th>Email</th><th>Phone</th><th>Match</th><th>Paid</th><th>Registered</th></tr>
+      </thead>
+      <tbody id="regBody"></tbody>
+    </table>
+  </div>
+
+  <div class="admin-panel" id="panelMatches">
+    <div class="reg-card" style="margin-bottom:24px;">
+      <h3 style="font-size:15px; margin-bottom:16px;">Add a tournament</h3>
+      <form id="addMatchForm">
+        <div class="form-2col">
+          <div class="form-row"><label for="mDay">Day label</label><input type="text" id="mDay" placeholder="TODAY / TOMORROW / SAT" required></div>
+          <div class="form-row"><label for="mTime">Time</label><input type="text" id="mTime" placeholder="18:00" required></div>
+        </div>
+        <div class="form-row"><label for="mName">Match name</label><input type="text" id="mName" placeholder="Bermuda Squad Clash" required></div>
+        <div class="form-2col">
+          <div class="form-row"><label for="mSub">Subtitle</label><input type="text" id="mSub" placeholder="Squad · 48 slots"></div>
+          <div class="form-row"><label for="mMap">Map</label><input type="text" id="mMap" placeholder="Bermuda"></div>
+        </div>
+        <div class="form-2col">
+          <div class="form-row"><label for="mFee">Entry fee (₹, 0 = free)</label><input type="number" id="mFee" min="0" value="0"></div>
+          <div class="form-row"><label for="mStatus">Status</label>
+            <select id="mStatus">
+              <option value="open">Registration open</option>
+              <option value="live">Live now</option>
+              <option value="soon">Opens soon</option>
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Add tournament</button>
+        <div class="form-msg" id="matchMsg"></div>
+      </form>
+    </div>
+    <table class="admin-table">
+      <thead><tr><th>Day / Time</th><th>Name</th><th>Map</th><th>Entry</th><th>Status</th><th></th></tr></thead>
+      <tbody id="matchBody"></tbody>
+    </table>
+  </div>
 </div>
 
 <script>
   const API_BASE = '';
 
   function getKey(){ return sessionStorage.getItem('ember_admin_key'); }
+
+  function switchAdminTab(tab){
+    const isRegs = tab === 'regs';
+    document.getElementById('panelRegs').classList.toggle('active', isRegs);
+    document.getElementById('panelMatches').classList.toggle('active', !isRegs);
+    document.getElementById('tabRegs').classList.toggle('active', isRegs);
+    document.getElementById('tabMatches').classList.toggle('active', !isRegs);
+    if(!isRegs) loadSchedule();
+  }
 
   async function doLogin(){
     const key = document.getElementById('adminKey').value.trim();
@@ -85,7 +141,7 @@
       document.getElementById('loginView').style.display = 'none';
       document.getElementById('dashView').style.display = 'block';
       document.getElementById('countLabel').textContent = `${data.length} total registration${data.length===1?'':'s'}`;
-      document.getElementById('regBody').innerHTML = data.slice().reverse().map(r => `
+      document.getElementById('regBody').innerHTML = data.map(r => `
         <tr>
           <td>${r.ign}</td>
           <td class="mono">${r.uid}</td>
@@ -101,6 +157,89 @@
       alert('Could not load registrations.');
     }
   }
+
+  // ---- Tournament management ----
+
+  let scheduleCache = [];
+
+  async function loadSchedule(){
+    try{
+      const res = await fetch(API_BASE + '/api/schedule');
+      scheduleCache = await res.json();
+      renderMatches();
+    }catch(e){
+      alert('Could not load tournaments.');
+    }
+  }
+
+  function entryLabel(fee){ return fee > 0 ? '₹' + fee : 'Free'; }
+
+  function renderMatches(){
+    document.getElementById('matchBody').innerHTML = scheduleCache.map((m, i) => `
+      <tr>
+        <td class="mono">${m.day} ${m.time}</td>
+        <td>${m.name}<br><span style="color:var(--ash); font-size:11px;">${m.sub || ''}</span></td>
+        <td>${m.map || ''}</td>
+        <td class="mono">${entryLabel(m.entryFee)}</td>
+        <td>${m.status}</td>
+        <td><button type="button" class="btn btn-ghost btn-sm" onclick="deleteMatch(${i})">Delete</button></td>
+      </tr>
+    `).join('');
+  }
+
+  async function saveSchedule(){
+    const key = getKey();
+    const res = await fetch(API_BASE + '/api/admin/schedule', {
+      method:'POST',
+      headers:{'Content-Type':'application/json', 'x-admin-key': key},
+      body: JSON.stringify(scheduleCache)
+    });
+    if(!res.ok){
+      const d = await res.json().catch(()=>({}));
+      throw new Error(d.error || 'Could not save changes.');
+    }
+  }
+
+  async function deleteMatch(i){
+    if(!confirm('Delete this tournament? This cannot be undone.')) return;
+    const removed = scheduleCache.splice(i, 1);
+    try{
+      await saveSchedule();
+      renderMatches();
+    }catch(e){
+      scheduleCache.splice(i, 0, removed[0]);
+      alert(e.message);
+    }
+  }
+
+  document.getElementById('addMatchForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const msg = document.getElementById('matchMsg');
+    msg.className = 'form-msg'; msg.textContent = '';
+    const newMatch = {
+      id: 'm' + Date.now(),
+      day: document.getElementById('mDay').value.trim().toUpperCase(),
+      time: document.getElementById('mTime').value.trim(),
+      name: document.getElementById('mName').value.trim(),
+      sub: document.getElementById('mSub').value.trim(),
+      map: document.getElementById('mMap').value.trim(),
+      entryFee: Number(document.getElementById('mFee').value) || 0,
+      status: document.getElementById('mStatus').value,
+    };
+    scheduleCache.push(newMatch);
+    try{
+      await saveSchedule();
+      msg.textContent = 'Tournament added.';
+      msg.className = 'form-msg ok';
+      renderMatches();
+      this.reset();
+      document.getElementById('mFee').value = 0;
+    }catch(err){
+      scheduleCache.pop();
+      msg.textContent = err.message;
+      msg.className = 'form-msg err';
+    }
+  });
 
   document.addEventListener('DOMContentLoaded', showDashboard);
 </script>

@@ -22,8 +22,10 @@
       <a href="rules.html">Rules</a>
     </div>
     <div class="navcta">
-      <button class="btn btn-ghost" onclick="openLogin()">Log in</button>
-      <button class="btn btn-primary" onclick="scrollToReg()">Sign up</button>
+      <span class="user-greeting" id="userGreeting" style="display:none;"></span>
+      <button class="btn btn-ghost" id="logoutBtn" style="display:none;" onclick="logout()">Log out</button>
+      <button class="btn btn-ghost" id="loginBtn" onclick="openAuthModal('login')">Log in</button>
+      <button class="btn btn-primary" id="signupBtn" onclick="openAuthModal('signup')">Sign up</button>
       <button class="hamburger" id="hamburger" aria-label="Menu"><span></span><span></span><span></span></button>
     </div>
   </nav>

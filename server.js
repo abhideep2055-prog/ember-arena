@@ -14,6 +14,34 @@ const razorpay = (Razorpay && process.env.RAZORPAY_KEY_ID && process.env.RAZORPA
 
 const { initDb } = require('./db');
 const regStore = require('./registrations');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const playerStore = require('./players');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'insecure-dev-secret-change-me';
+if (!process.env.JWT_SECRET) {
+  console.warn('⚠️  JWT_SECRET is not set — using an insecure default. Set JWT_SECRET in .env before going live.');
+}
+
+function signToken(player) {
+  return jwt.sign(
+    { sub: player.id, ign: player.ign, email: player.email, phone: player.phone || null },
+    JWT_SECRET,
+    { expiresIn: '30d' }
+  );
+}
+
+function requireAuth(req, res, next) {
+  const header = req.headers['authorization'] || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Please log in to continue.' });
+  try {
+    req.player = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch (e) {
+    return res.status(401).json({ error: 'Session expired. Please log in again.' });
+  }
+}
 
 const app = express();
 app.use(cors());
@@ -87,15 +115,82 @@ app.get('/api/leaderboard', (req, res) => res.json(leaderboard));
 app.get('/api/schedule', (req, res) => res.json(schedule));
 app.get('/api/news', (req, res) => res.json(news));
 
-app.post('/api/register', async (req, res) => {
-  const { ign, uid, mode, email, phone, matchId, paymentId } = req.body || {};
-  if (!ign || !uid || !email || !phone) {
-    return res.status(400).json({ error: 'Missing required fields: ign, uid, email, phone.' });
+// ---- Player accounts (signup / login) ----
+
+app.post('/api/auth/signup', async (req, res) => {
+  const { ign, email, phone, password } = req.body || {};
+  if (!ign || !email || !phone || !password) {
+    return res.status(400).json({ error: 'Name, email, phone, and password are required.' });
+  }
+  if (String(password).length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters.' });
   }
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   if (!emailOk) {
     return res.status(400).json({ error: 'Enter a valid email address.' });
   }
+  try {
+    const existing = await playerStore.findByEmail(email);
+    if (existing) {
+      return res.status(409).json({ error: 'An account with this email already exists. Try logging in instead.' });
+    }
+    const passwordHash = await bcrypt.hash(String(password), 10);
+    const player = {
+      id: Date.now().toString(),
+      ign: String(ign).slice(0, 40),
+      email: String(email).slice(0, 80),
+      phone: String(phone).slice(0, 20),
+      passwordHash,
+    };
+    await playerStore.createPlayer(player);
+    const token = signToken(player);
+    res.json({ token, player: { id: player.id, ign: player.ign, email: player.email, phone: player.phone } });
+  } catch (e) {
+    if (e.message === 'NO_DB') {
+      return res.status(503).json({ error: 'Player accounts need a database connected. Set DATABASE_URL in backend/.env (see README).' });
+    }
+    console.error('Signup error:', e);
+    res.status(500).json({ error: 'Could not create your account. Please try again.' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required.' });
+  }
+  try {
+    const player = await playerStore.findByEmail(email);
+    if (!player) {
+      return res.status(401).json({ error: 'Wrong email or password.' });
+    }
+    const ok = await bcrypt.compare(String(password), player.password_hash);
+    if (!ok) {
+      return res.status(401).json({ error: 'Wrong email or password.' });
+    }
+    const token = signToken({ id: player.id, ign: player.ign, email: player.email, phone: player.phone });
+    res.json({ token, player: { id: player.id, ign: player.ign, email: player.email, phone: player.phone } });
+  } catch (e) {
+    if (e.message === 'NO_DB') {
+      return res.status(503).json({ error: 'Player accounts need a database connected. Set DATABASE_URL in backend/.env (see README).' });
+    }
+    console.error('Login error:', e);
+    res.status(500).json({ error: 'Could not log in. Please try again.' });
+  }
+});
+
+app.get('/api/auth/me', requireAuth, (req, res) => {
+  res.json({ player: { id: req.player.sub, ign: req.player.ign, email: req.player.email, phone: req.player.phone } });
+});
+
+// ---- Registration (requires a logged-in player) ----
+
+app.post('/api/register', requireAuth, async (req, res) => {
+  const { uid, mode, matchId, paymentId } = req.body || {};
+  if (!uid) {
+    return res.status(400).json({ error: 'Free Fire UID is required.' });
+  }
+  const { sub: playerId, ign, email, phone } = req.player;
   try {
     const isDuplicate = await regStore.findDuplicate(uid, matchId);
     if (isDuplicate) {
@@ -107,11 +202,12 @@ app.post('/api/register', async (req, res) => {
     }
     const entry = {
       id: Date.now().toString(),
-      ign: String(ign).slice(0, 40),
+      playerId,
+      ign,
       uid: String(uid).slice(0, 20),
       mode: mode || 'Solo',
-      email: String(email).slice(0, 80),
-      phone: String(phone).slice(0, 20),
+      email,
+      phone: phone || '',
       matchId: matchId || null,
       paymentId: paymentId || null,
       createdAt: new Date().toISOString(),

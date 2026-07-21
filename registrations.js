@@ -23,9 +23,9 @@ function writeJsonRegs(data) {
 async function addRegistration(entry) {
   if (pool) {
     await pool.query(
-      `INSERT INTO registrations (id, ign, uid, mode, email, phone, match_id, payment_id, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [entry.id, entry.ign, entry.uid, entry.mode, entry.email, entry.phone, entry.matchId, entry.paymentId, entry.createdAt]
+      `INSERT INTO registrations (id, player_id, ign, uid, mode, email, phone, match_id, payment_id, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [entry.id, entry.playerId || null, entry.ign, entry.uid, entry.mode, entry.email, entry.phone, entry.matchId, entry.paymentId, entry.createdAt]
     );
   } else {
     const regs = readJsonRegs();
@@ -59,7 +59,7 @@ async function countRegistrations() {
 async function allRegistrations() {
   if (pool) {
     const res = await pool.query(
-      `SELECT id, ign, uid, mode, email, phone, match_id AS "matchId", payment_id AS "paymentId", created_at AS "createdAt"
+      `SELECT id, player_id AS "playerId", ign, uid, mode, email, phone, match_id AS "matchId", payment_id AS "paymentId", created_at AS "createdAt"
        FROM registrations ORDER BY created_at DESC`
     );
     return res.rows;
