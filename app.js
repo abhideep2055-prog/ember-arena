@@ -120,7 +120,10 @@ function injectAuthModal(){
   document.getElementById('loginForm').addEventListener('submit', async function(e){
     e.preventDefault();
     const msg = document.getElementById('loginMsg');
+    const btn = this.querySelector('button[type="submit"]');
     msg.className = 'form-msg'; msg.textContent = '';
+    if(btn.disabled) return;
+    btn.disabled = true;
     try{
       const res = await fetch(API_BASE + '/api/auth/login', {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -138,13 +141,18 @@ function injectAuthModal(){
     }catch(err){
       msg.textContent = err.message;
       msg.className = 'form-msg err';
+    }finally{
+      btn.disabled = false;
     }
   });
 
   document.getElementById('signupForm').addEventListener('submit', async function(e){
     e.preventDefault();
     const msg = document.getElementById('signupMsg');
+    const btn = this.querySelector('button[type="submit"]');
     msg.className = 'form-msg'; msg.textContent = '';
+    if(btn.disabled) return;
+    btn.disabled = true;
     try{
       const res = await fetch(API_BASE + '/api/auth/signup', {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -164,6 +172,8 @@ function injectAuthModal(){
     }catch(err){
       msg.textContent = err.message;
       msg.className = 'form-msg err';
+    }finally{
+      btn.disabled = false;
     }
   });
 }
@@ -404,12 +414,15 @@ function initRegForm(){
   form.addEventListener('submit', async function(e){
     e.preventDefault();
     const msg = document.getElementById('regMsg');
+    const btn = form.querySelector('button[type="submit"]');
     msg.className = 'form-msg';
     msg.textContent = '';
     if(!getToken()){
       openAuthModal('login');
       return;
     }
+    if(btn.disabled) return;
+    btn.disabled = true;
     const select = document.getElementById('tournament');
     const matchId = select ? select.value : null;
     const match = scheduleCache.find(m => m.id === matchId) || null;
@@ -426,6 +439,8 @@ function initRegForm(){
     }catch(err){
       msg.textContent = err.message || "Couldn't submit right now. Make sure the backend server is running, then try again.";
       msg.className = 'form-msg err';
+    }finally{
+      btn.disabled = false;
     }
   });
 }
