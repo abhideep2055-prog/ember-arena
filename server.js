@@ -149,6 +149,9 @@ app.post('/api/auth/signup', async (req, res) => {
     if (e.message === 'NO_DB') {
       return res.status(503).json({ error: 'Player accounts need a database connected. Set DATABASE_URL in backend/.env (see README).' });
     }
+    if (e.code === '23505') {
+      return res.status(409).json({ error: 'An account with this email already exists. Try logging in instead.' });
+    }
     console.error('Signup error:', e);
     res.status(500).json({ error: 'Could not create your account. Please try again.' });
   }
