@@ -337,6 +337,24 @@ app.post('/api/admin/maintenance', async (req, res) => {
   res.json({ success: true });
 });
 
+// ---- Social links ----
+
+const SOCIAL_DEFAULT = { instagram: '', youtube: '', discord: '', whatsapp: '', telegram: '' };
+
+app.get('/api/social-links', async (req, res) => {
+  res.json(await contentStore.getContent('socialLinks', SOCIAL_DEFAULT));
+});
+
+app.post('/api/admin/social-links', async (req, res) => {
+  const body = req.body || {};
+  const clean = {};
+  for (const key of Object.keys(SOCIAL_DEFAULT)) {
+    clean[key] = body[key] ? String(body[key]).slice(0, 300) : '';
+  }
+  await contentStore.setContent('socialLinks', clean);
+  res.json({ success: true });
+});
+
 // ---- Match-start notifications ----
 // Runs every minute. For any match with a real start time (set by the admin)
 // that is 9-10 minutes away and hasn't been notified yet, this pushes a

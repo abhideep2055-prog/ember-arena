@@ -53,6 +53,22 @@
     <button type="button" class="btn btn-primary" id="maintToggleBtn" onclick="toggleMaintenance()" style="white-space:nowrap;">Turn on</button>
   </div>
 
+  <div class="reg-card" style="margin-bottom:24px;">
+    <h3 style="font-size:15px; margin-bottom:4px;">🔗 Social links</h3>
+    <p style="color:var(--ash); font-size:12px; margin-bottom:16px;">Shown as icons in the site footer. Leave any field blank to hide that icon. Paste full links (starting with https://).</p>
+    <div class="form-2col">
+      <div class="form-row"><label for="socInstagram">Instagram</label><input type="text" id="socInstagram" placeholder="https://instagram.com/yourpage"></div>
+      <div class="form-row"><label for="socYoutube">YouTube</label><input type="text" id="socYoutube" placeholder="https://youtube.com/@yourchannel"></div>
+    </div>
+    <div class="form-2col">
+      <div class="form-row"><label for="socDiscord">Discord</label><input type="text" id="socDiscord" placeholder="https://discord.gg/yourinvite"></div>
+      <div class="form-row"><label for="socWhatsapp">WhatsApp</label><input type="text" id="socWhatsapp" placeholder="https://wa.me/91XXXXXXXXXX"></div>
+    </div>
+    <div class="form-row"><label for="socTelegram">Telegram</label><input type="text" id="socTelegram" placeholder="https://t.me/yourchannel"></div>
+    <button type="button" class="btn btn-primary" onclick="saveSocialLinks()">Save social links</button>
+    <div class="form-msg" id="socialMsg"></div>
+  </div>
+
   <div class="admin-tabs">
     <button class="admin-tab active" id="tabRegs" onclick="switchAdminTab('regs')">Registrations</button>
     <button class="admin-tab" id="tabMatches" onclick="switchAdminTab('matches')">Tournaments</button>
@@ -185,6 +201,7 @@
       document.getElementById('loginView').style.display = 'none';
       document.getElementById('dashView').style.display = 'block';
       loadMaintenanceStatus();
+      loadSocialLinks();
       document.getElementById('countLabel').textContent = `${data.length} total registration${data.length===1?'':'s'}`;
       document.getElementById('regBody').innerHTML = data.map(r => `
         <tr>
@@ -405,6 +422,46 @@
       loadMaintenanceStatus();
     }catch(e){
       alert(e.message);
+    }
+  }
+
+  // ---- Social links ----
+
+  async function loadSocialLinks(){
+    try{
+      const res = await fetch(API_BASE + '/api/social-links');
+      const links = await res.json();
+      document.getElementById('socInstagram').value = links.instagram || '';
+      document.getElementById('socYoutube').value = links.youtube || '';
+      document.getElementById('socDiscord').value = links.discord || '';
+      document.getElementById('socWhatsapp').value = links.whatsapp || '';
+      document.getElementById('socTelegram').value = links.telegram || '';
+    }catch(e){}
+  }
+
+  async function saveSocialLinks(){
+    const key = getKey();
+    const msg = document.getElementById('socialMsg');
+    msg.className = 'form-msg'; msg.textContent = '';
+    const payload = {
+      instagram: document.getElementById('socInstagram').value.trim(),
+      youtube: document.getElementById('socYoutube').value.trim(),
+      discord: document.getElementById('socDiscord').value.trim(),
+      whatsapp: document.getElementById('socWhatsapp').value.trim(),
+      telegram: document.getElementById('socTelegram').value.trim(),
+    };
+    try{
+      const res = await fetch(API_BASE + '/api/admin/social-links', {
+        method:'POST',
+        headers:{'Content-Type':'application/json', 'x-admin-key': key},
+        body: JSON.stringify(payload)
+      });
+      if(!res.ok){ const d = await res.json().catch(()=>({})); throw new Error(d.error || 'Could not save.'); }
+      msg.textContent = 'Saved.';
+      msg.className = 'form-msg ok';
+    }catch(e){
+      msg.textContent = e.message;
+      msg.className = 'form-msg err';
     }
   }
 
