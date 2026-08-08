@@ -1,0 +1,405 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const crypto = require('crypto');
+
+let Razorpay;
+try { Razorpay = require('razorpay'); } catch (e) { Razorpay = null; }
+
+const razorpay = (Razorpay && process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET)
+  ? new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET })
+  : null;
+
+const { initDb } = require('./db');
+const regStore = require('./registrations');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const playerStore = require('./players');
+const pushStore = require('./push');
+const contentStore = require('./content');
+
+let webpush;
+try { webpush = require('web-push'); } catch (e) { webpush = null; }
+
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
+const pushEnabled = !!(webpush && VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+
+if (pushEnabled) {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT || 'mailto:admin@example.com',
+    VAPID_PUBLIC_KEY,
+    VAPID_PRIVATE_KEY
+  );
+} else {
+  console.warn('⚠️  Push notifications are not configured — set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY in .env to enable match alerts.');
+}
+
+const JWT_SECRET = process.env.JWT_SECRET || 'insecure-dev-secret-change-me';
+if (!process.env.JWT_SECRET) {
+  console.warn('⚠️  JWT_SECRET is not set — using an insecure default. Set JWT_SECRET in .env before going live.');
+}
+
+function signToken(player) {
+  return jwt.sign(
+    { sub: player.id, ign: player.ign, email: player.email, phone: player.phone || null },
+    JWT_SECRET,
+    { expiresIn: '30d' }
+  );
+}
+
+function requireAuth(req, res, next) {
+  const header = req.headers['authorization'] || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Please log in to continue.' });
+  try {
+    req.player = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch (e) {
+    return res.status(401).json({ error: 'Session expired. Please log in again.' });
+  }
+}
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use(express.static(__dirname));
+
+const BASE_PLAYER_COUNT = 18420;
+const BASE_PRIZE_POOL = 1250000;
+
+// ---- Public API ----
+
+app.get('/api/stats', async (req, res) => {
+  const total = await regStore.countRegistrations();
+  const schedule = await contentStore.getContent('schedule', []);
+  res.json({
+    playersRegistered: BASE_PLAYER_COUNT + total,
+    prizePool: BASE_PRIZE_POOL,
+    matchesToday: schedule.filter(m => m.day === 'TODAY').length,
+  });
+});
+
+app.get('/api/leaderboard', async (req, res) => {
+  res.json(await contentStore.getContent('leaderboard', []));
+});
+app.get('/api/schedule', async (req, res) => {
+  res.json(await contentStore.getContent('schedule', []));
+});
+app.get('/api/news', async (req, res) => {
+  res.json(await contentStore.getContent('news', []));
+});
+
+// ---- Player accounts (signup / login) ----
+
+app.post('/api/auth/signup', async (req, res) => {
+  const { ign, email, phone, password } = req.body || {};
+  if (!ign || !email || !phone || !password) {
+    return res.status(400).json({ error: 'Name, email, phone, and password are required.' });
+  }
+  if (String(password).length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+  }
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  if (!emailOk) {
+    return res.status(400).json({ error: 'Enter a valid email address.' });
+  }
+  try {
+    const existing = await playerStore.findByEmail(email);
+    if (existing) {
+      return res.status(409).json({ error: 'An account with this email already exists. Try logging in instead.' });
+    }
+    const passwordHash = await bcrypt.hash(String(password), 10);
+    const player = {
+      id: Date.now().toString(),
+      ign: String(ign).slice(0, 40),
+      email: String(email).slice(0, 80),
+      phone: String(phone).slice(0, 20),
+      passwordHash,
+    };
+    await playerStore.createPlayer(player);
+    const token = signToken(player);
+    res.json({ token, player: { id: player.id, ign: player.ign, email: player.email, phone: player.phone } });
+  } catch (e) {
+    if (e.message === 'NO_DB') {
+      return res.status(503).json({ error: 'Player accounts need a database connected. Set DATABASE_URL in backend/.env (see README).' });
+    }
+    if (e.code === '23505') {
+      return res.status(409).json({ error: 'An account with this email already exists. Try logging in instead.' });
+    }
+    console.error('Signup error:', e);
+    res.status(500).json({ error: 'Could not create your account. Please try again.' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required.' });
+  }
+  try {
+    const player = await playerStore.findByEmail(email);
+    if (!player) {
+      return res.status(401).json({ error: 'Wrong email or password.' });
+    }
+    const ok = await bcrypt.compare(String(password), player.password_hash);
+    if (!ok) {
+      return res.status(401).json({ error: 'Wrong email or password.' });
+    }
+    const token = signToken({ id: player.id, ign: player.ign, email: player.email, phone: player.phone });
+    res.json({ token, player: { id: player.id, ign: player.ign, email: player.email, phone: player.phone } });
+  } catch (e) {
+    if (e.message === 'NO_DB') {
+      return res.status(503).json({ error: 'Player accounts need a database connected. Set DATABASE_URL in backend/.env (see README).' });
+    }
+    console.error('Login error:', e);
+    res.status(500).json({ error: 'Could not log in. Please try again.' });
+  }
+});
+
+app.get('/api/auth/me', requireAuth, (req, res) => {
+  res.json({ player: { id: req.player.sub, ign: req.player.ign, email: req.player.email, phone: req.player.phone } });
+});
+
+// ---- Push notifications ----
+
+app.get('/api/push/vapid-public-key', (req, res) => {
+  if (!pushEnabled) {
+    return res.status(503).json({ error: 'Push notifications are not configured on this server.' });
+  }
+  res.json({ publicKey: VAPID_PUBLIC_KEY });
+});
+
+app.post('/api/push/subscribe', requireAuth, async (req, res) => {
+  if (!pushEnabled) {
+    return res.status(503).json({ error: 'Push notifications are not configured on this server.' });
+  }
+  const subscription = req.body || {};
+  if (!subscription.endpoint || !subscription.keys) {
+    return res.status(400).json({ error: 'Invalid subscription.' });
+  }
+  try {
+    await pushStore.saveSubscription(req.player.sub, subscription);
+    res.json({ success: true });
+  } catch (e) {
+    if (e.message === 'NO_DB') {
+      return res.status(503).json({ error: 'Push notifications need a database connected. Set DATABASE_URL in backend/.env.' });
+    }
+    console.error('Push subscribe error:', e);
+    res.status(500).json({ error: 'Could not save your notification subscription.' });
+  }
+});
+
+app.post('/api/push/unsubscribe', requireAuth, async (req, res) => {
+  const { endpoint } = req.body || {};
+  if (endpoint) await pushStore.removeSubscription(endpoint);
+  res.json({ success: true });
+});
+
+// ---- Registration (requires a logged-in player) ----
+
+app.post('/api/register', requireAuth, async (req, res) => {
+  const { uid, mode, matchId, paymentId } = req.body || {};
+  if (!uid) {
+    return res.status(400).json({ error: 'Free Fire UID is required.' });
+  }
+  const { sub: playerId, ign, email, phone } = req.player;
+  try {
+    const isDuplicate = await regStore.findDuplicate(uid, matchId);
+    if (isDuplicate) {
+      return res.status(409).json({ error: 'This Free Fire UID is already registered for this match.' });
+    }
+    const match = matchId ? (await contentStore.getContent('schedule', [])).find(m => m.id === matchId) : null;
+    if (match && match.entryFee > 0 && !paymentId) {
+      return res.status(402).json({ error: 'This match requires payment before registration.' });
+    }
+    const entry = {
+      id: Date.now().toString(),
+      playerId,
+      ign,
+      uid: String(uid).slice(0, 20),
+      mode: mode || 'Solo',
+      email,
+      phone: phone || '',
+      matchId: matchId || null,
+      paymentId: paymentId || null,
+      createdAt: new Date().toISOString(),
+    };
+    await regStore.addRegistration(entry);
+    const total = await regStore.countRegistrations();
+    res.json({ success: true, entry, totalPlayers: BASE_PLAYER_COUNT + total });
+  } catch (e) {
+    console.error('Registration error:', e);
+    res.status(500).json({ error: 'Something went wrong saving your registration. Please try again.' });
+  }
+});
+
+// ---- Payments (Razorpay) ----
+
+app.post('/api/payment/create-order', async (req, res) => {
+  if (!razorpay) {
+    return res.status(503).json({ error: 'Payment gateway is not configured yet. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to backend/.env.' });
+  }
+  const { amount, matchId } = req.body || {};
+  if (!amount || Number(amount) <= 0) {
+    return res.status(400).json({ error: 'Invalid amount.' });
+  }
+  try {
+    const order = await razorpay.orders.create({
+      amount: Math.round(Number(amount) * 100), // paise
+      currency: 'INR',
+      receipt: `receipt_${matchId || 'na'}_${Date.now()}`,
+    });
+    res.json({ orderId: order.id, amount: order.amount, currency: order.currency, keyId: process.env.RAZORPAY_KEY_ID });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not create payment order.' });
+  }
+});
+
+app.post('/api/payment/verify', (req, res) => {
+  if (!process.env.RAZORPAY_KEY_SECRET) {
+    return res.status(503).json({ error: 'Payment gateway is not configured yet.' });
+  }
+  const { order_id, payment_id, signature } = req.body || {};
+  if (!order_id || !payment_id || !signature) {
+    return res.status(400).json({ error: 'Missing payment details.' });
+  }
+  const expected = crypto
+    .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+    .update(`${order_id}|${payment_id}`)
+    .digest('hex');
+  const verified = expected === signature;
+  res.json({ verified });
+});
+
+// ---- Admin endpoints (protected by ADMIN_KEY) ----
+
+function requireAdmin(req, res, next) {
+  if (!process.env.ADMIN_KEY) {
+    return res.status(503).json({ error: 'Admin access is not configured. Set ADMIN_KEY in backend/.env.' });
+  }
+  const key = req.headers['x-admin-key'];
+  if (!key || key !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ error: 'Invalid or missing admin key.' });
+  }
+  next();
+}
+
+app.post('/api/admin/login', (req, res) => {
+  if (!process.env.ADMIN_KEY) {
+    return res.status(503).json({ error: 'Admin access is not configured. Set ADMIN_KEY in backend/.env.' });
+  }
+  const { key } = req.body || {};
+  if (key !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ error: 'Wrong admin key.' });
+  }
+  res.json({ success: true });
+});
+
+app.use('/api/admin', requireAdmin);
+
+app.get('/api/admin/registrations', async (req, res) => {
+  const data = await regStore.allRegistrations();
+  res.json(data);
+});
+
+app.post('/api/admin/leaderboard', async (req, res) => {
+  if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Expected an array of squads.' });
+  await contentStore.setContent('leaderboard', req.body);
+  res.json({ success: true });
+});
+
+app.post('/api/admin/schedule', async (req, res) => {
+  if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Expected an array of matches.' });
+  await contentStore.setContent('schedule', req.body);
+  res.json({ success: true });
+});
+
+app.post('/api/admin/news', async (req, res) => {
+  if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Expected an array of news items.' });
+  await contentStore.setContent('news', req.body);
+  res.json({ success: true });
+});
+
+// ---- Maintenance mode ----
+
+app.get('/api/maintenance', async (req, res) => {
+  res.json(await contentStore.getContent('maintenance', { enabled: false, message: '' }));
+});
+
+app.post('/api/admin/maintenance', async (req, res) => {
+  const { enabled, message } = req.body || {};
+  await contentStore.setContent('maintenance', {
+    enabled: !!enabled,
+    message: message ? String(message).slice(0, 300) : '',
+  });
+  res.json({ success: true });
+});
+
+// ---- Match-start notifications ----
+// Runs every minute. For any match with a real start time (set by the admin)
+// that is 9-10 minutes away and hasn't been notified yet, this pushes a
+// browser notification to everyone registered for it.
+// Note: on Render's free tier the service sleeps when idle, so this only
+// fires while the app happens to be awake (e.g. someone has the site open).
+
+async function checkUpcomingMatchesAndNotify() {
+  if (!pushEnabled) return;
+  const now = Date.now();
+  const schedule = await contentStore.getContent('schedule', []);
+  for (const match of schedule) {
+    if (!match.startAt) continue;
+    const startTime = new Date(match.startAt).getTime();
+    if (isNaN(startTime)) continue;
+    const minutesUntil = (startTime - now) / 60000;
+    if (minutesUntil > 9 && minutesUntil <= 10) {
+      try {
+        const already = await pushStore.wasNotified(match.id);
+        if (already) continue;
+        const playerIds = await regStore.playerIdsForMatch(match.id);
+        if (playerIds.length === 0) {
+          await pushStore.markNotified(match.id);
+          continue;
+        }
+        const subs = await pushStore.getSubscriptionsForPlayers(playerIds);
+        const payload = JSON.stringify({
+          title: 'Match starting soon!',
+          body: `${match.name} starts in 10 minutes. Room ID is coming by SMS.`,
+          url: '/index.html#schedule',
+        });
+        for (const sub of subs) {
+          try {
+            await webpush.sendNotification(
+              { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+              payload
+            );
+          } catch (err) {
+            if (err.statusCode === 404 || err.statusCode === 410) {
+              await pushStore.removeSubscription(sub.endpoint);
+            } else {
+              console.error('Push send error:', err.message);
+            }
+          }
+        }
+        await pushStore.markNotified(match.id);
+      } catch (e) {
+        console.error('Notification check error for match', match.id, e.message);
+      }
+    }
+  }
+}
+
+if (pushEnabled) {
+  setInterval(checkUpcomingMatchesAndNotify, 60 * 1000);
+}
+
+const PORT = process.env.PORT || 3000;
+
+initDb()
+  .catch(e => console.error('Database init failed, falling back to JSON file storage:', e.message))
+  .finally(() => {
+    app.listen(PORT, () => {
+      console.log(`Ember Arena server running at http://localhost:${PORT}`);
+    });
+  });
