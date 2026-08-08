@@ -322,6 +322,21 @@ app.post('/api/admin/news', async (req, res) => {
   res.json({ success: true });
 });
 
+// ---- Maintenance mode ----
+
+app.get('/api/maintenance', async (req, res) => {
+  res.json(await contentStore.getContent('maintenance', { enabled: false, message: '' }));
+});
+
+app.post('/api/admin/maintenance', async (req, res) => {
+  const { enabled, message } = req.body || {};
+  await contentStore.setContent('maintenance', {
+    enabled: !!enabled,
+    message: message ? String(message).slice(0, 300) : '',
+  });
+  res.json({ success: true });
+});
+
 // ---- Match-start notifications ----
 // Runs every minute. For any match with a real start time (set by the admin)
 // that is 9-10 minutes away and hasn't been notified yet, this pushes a

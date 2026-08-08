@@ -530,7 +530,32 @@ function initRegForm(){
   });
 }
 
-document.addEventListener('DOMContentLoaded', ()=>{
+async function checkMaintenance(){
+  // admin.html manages maintenance mode and must stay reachable even while it's on
+  if(window.location.pathname.includes('admin.html')) return false;
+  try{
+    const res = await fetch(API_BASE + '/api/maintenance');
+    const data = await res.json();
+    if(data && data.enabled){
+      document.body.innerHTML = `
+        <div style="min-height:100vh; display:flex; align-items:center; justify-content:center; text-align:center; padding:24px; background:#0B0B0F; color:#F5F3EF; font-family:'Inter',sans-serif;">
+          <div style="max-width:480px;">
+            <div style="font-family:'Anton',sans-serif; text-transform:uppercase; font-size:34px; color:#FF6B1A; margin-bottom:16px;">Under maintenance</div>
+            <p style="color:#B8B5C0; font-size:15px; line-height:1.6;">${data.message || "We're making some improvements. Please check back shortly."}</p>
+          </div>
+        </div>
+      `;
+      return true;
+    }
+  }catch(e){
+    // if the check itself fails, don't block the site — fail open
+  }
+  return false;
+}
+
+document.addEventListener('DOMContentLoaded', async ()=>{
+  const blocked = await checkMaintenance();
+  if(blocked) return;
   initNav();
   initTicker();
   initStats();

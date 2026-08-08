@@ -44,6 +44,15 @@
     <button class="btn btn-ghost" onclick="doLogout()">Log out</button>
   </div>
 
+  <div class="reg-card" style="margin-bottom:24px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+    <div style="flex:1; min-width:220px;">
+      <h3 style="font-size:15px; margin-bottom:4px;">🚧 Maintenance mode</h3>
+      <p style="color:var(--ash); font-size:12px;">When on, everyone visiting the site sees an "Under Maintenance" message instead of the homepage. This page stays accessible so you can turn it back off.</p>
+      <input type="text" id="maintMsg" placeholder="Optional custom message shown to visitors" style="margin-top:10px;">
+    </div>
+    <button type="button" class="btn btn-primary" id="maintToggleBtn" onclick="toggleMaintenance()" style="white-space:nowrap;">Turn on</button>
+  </div>
+
   <div class="admin-tabs">
     <button class="admin-tab active" id="tabRegs" onclick="switchAdminTab('regs')">Registrations</button>
     <button class="admin-tab" id="tabMatches" onclick="switchAdminTab('matches')">Tournaments</button>
@@ -175,6 +184,7 @@
       const data = await res.json();
       document.getElementById('loginView').style.display = 'none';
       document.getElementById('dashView').style.display = 'block';
+      loadMaintenanceStatus();
       document.getElementById('countLabel').textContent = `${data.length} total registration${data.length===1?'':'s'}`;
       document.getElementById('regBody').innerHTML = data.map(r => `
         <tr>
@@ -358,6 +368,45 @@
       msg.className = 'form-msg err';
     }
   });
+
+  // ---- Maintenance mode ----
+
+  let maintenanceState = { enabled: false, message: '' };
+
+  async function loadMaintenanceStatus(){
+    try{
+      const res = await fetch(API_BASE + '/api/maintenance');
+      maintenanceState = await res.json();
+      document.getElementById('maintMsg').value = maintenanceState.message || '';
+      const btn = document.getElementById('maintToggleBtn');
+      if(maintenanceState.enabled){
+        btn.textContent = 'Turn off';
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-ghost');
+      }else{
+        btn.textContent = 'Turn on';
+        btn.classList.remove('btn-ghost');
+        btn.classList.add('btn-primary');
+      }
+    }catch(e){}
+  }
+
+  async function toggleMaintenance(){
+    const key = getKey();
+    const newState = { enabled: !maintenanceState.enabled, message: document.getElementById('maintMsg').value.trim() };
+    try{
+      const res = await fetch(API_BASE + '/api/admin/maintenance', {
+        method:'POST',
+        headers:{'Content-Type':'application/json', 'x-admin-key': key},
+        body: JSON.stringify(newState)
+      });
+      if(!res.ok){ const d = await res.json().catch(()=>({})); throw new Error(d.error || 'Could not update.'); }
+      maintenanceState = newState;
+      loadMaintenanceStatus();
+    }catch(e){
+      alert(e.message);
+    }
+  }
 
   document.addEventListener('DOMContentLoaded', showDashboard);
 </script>
