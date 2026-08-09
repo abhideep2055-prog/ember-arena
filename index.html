@@ -27,6 +27,7 @@
     </div>
     <div class="navcta">
       <span class="user-greeting" id="userGreeting" style="display:none;"></span>
+      <button class="btn btn-ghost" id="walletBtn" style="display:none;" onclick="openWalletModal()">💰 Wallet</button>
       <button class="btn btn-ghost" id="installBtn" onclick="installApp()">📲 Install App</button>
       <button class="btn btn-ghost" id="notifyBtn" style="display:none;" onclick="enableMatchAlerts()">🔔 Match alerts</button>
       <button class="btn btn-ghost" id="logoutBtn" style="display:none;" onclick="logout()">Log out</button>
@@ -144,27 +145,8 @@
       <div><span class="tag">// weekend grand finals</span><h2>Prize pool</h2></div>
       <p>Payouts for the top 3 squads in the Weekend Grand Booyah tournament.</p>
     </div>
-    <div class="prize-grid">
-      <div class="prize-card first">
-        <div class="prize-rank">1ST PLACE</div>
-        <div class="prize-amt">₹50,000</div>
-        <div class="prize-sub">+ trophy & season badge</div>
-      </div>
-      <div class="prize-card">
-        <div class="prize-rank">2ND PLACE</div>
-        <div class="prize-amt">₹25,000</div>
-        <div class="prize-sub">+ season badge</div>
-      </div>
-      <div class="prize-card">
-        <div class="prize-rank">3RD PLACE</div>
-        <div class="prize-amt">₹12,500</div>
-        <div class="prize-sub">+ season badge</div>
-      </div>
-    </div>
-    <div class="pool-total">
-      <div class="num">₹12,50,000</div>
-      <div class="lbl">Total prize pool distributed this month</div>
-    </div>
+    <div class="prize-grid" id="prizeGrid"></div>
+    <div class="pool-total" id="poolTotal"></div>
   </div>
 </section>
 

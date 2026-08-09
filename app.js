@@ -182,6 +182,7 @@ function refreshAuthUI(){
   const signupBtn = document.getElementById('signupBtn');
   const authNotice = document.getElementById('authNotice');
   const notifyBtn = document.getElementById('notifyBtn');
+  const walletBtn = document.getElementById('walletBtn');
   if(player){
     if(greeting){ greeting.style.display = 'inline'; greeting.textContent = 'Hi, ' + player.ign; }
     if(logoutBtn) logoutBtn.style.display = 'inline-block';
@@ -189,12 +190,14 @@ function refreshAuthUI(){
     if(signupBtn) signupBtn.style.display = 'none';
     if(authNotice) authNotice.style.display = 'none';
     if(notifyBtn) notifyBtn.style.display = 'inline-block';
+    if(walletBtn) walletBtn.style.display = 'inline-block';
   } else {
     if(greeting) greeting.style.display = 'none';
     if(logoutBtn) logoutBtn.style.display = 'none';
     if(loginBtn) loginBtn.style.display = 'inline-block';
     if(signupBtn) signupBtn.style.display = 'inline-block';
     if(notifyBtn) notifyBtn.style.display = 'none';
+    if(walletBtn) walletBtn.style.display = 'none';
     if(authNotice){
       authNotice.style.display = 'block';
       authNotice.className = 'form-msg err';
@@ -308,6 +311,123 @@ function answerChatbot(text){
         ? "I couldn't find an exact answer. Try the WhatsApp link in the footer to chat with the team directly."
         : "I couldn't find an exact answer for that. Check the Rules page, or look for a contact link in the footer once the team adds one."
     );
+  }
+}
+
+// ---- Wallet ----
+
+function injectWalletModal(){
+  if(document.getElementById('walletModal')) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div id="walletModal" class="auth-overlay">
+      <div class="auth-modal" style="max-width:400px;">
+        <button class="auth-close" onclick="closeWalletModal()" aria-label="Close">&times;</button>
+        <h3 style="font-size:18px; margin-bottom:4px;">💰 My Wallet</h3>
+        <div style="display:flex; gap:20px; margin:12px 0;">
+          <div>
+            <div style="font-family:'Anton',sans-serif; font-size:30px; color:var(--gold);" id="walletBalance">₹0</div>
+            <div style="font-size:11px; color:var(--ash);">Withdrawable (winnings)</div>
+          </div>
+          <div>
+            <div style="font-family:'Anton',sans-serif; font-size:30px; color:var(--teal);" id="walletBonusBalance">₹0</div>
+            <div style="font-size:11px; color:var(--ash);">Bonus (not withdrawable)</div>
+          </div>
+        </div>
+        <div id="walletMsg" class="form-msg"></div>
+        <form id="withdrawForm" style="margin-top:8px;">
+          <div class="form-row"><label for="withdrawAmount">Withdraw amount (₹)</label><input type="number" id="withdrawAmount" min="50" step="1" placeholder="Minimum ₹50" required></div>
+          <div class="form-row"><label for="withdrawUpi">Your UPI ID</label><input type="text" id="withdrawUpi" placeholder="yourname@upi" required></div>
+          <button type="submit" class="btn btn-primary" style="width:100%;">Request withdrawal</button>
+        </form>
+        <div style="margin-top:20px;">
+          <h4 style="font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--ash); margin-bottom:10px;">Recent activity</h4>
+          <div id="walletHistory" style="display:flex; flex-direction:column; gap:8px; max-height:180px; overflow-y:auto;"></div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+
+  document.getElementById('walletModal').addEventListener('click', function(e){
+    if(e.target === this) closeWalletModal();
+  });
+
+  document.getElementById('withdrawForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const msg = document.getElementById('walletMsg');
+    const btn = this.querySelector('button[type="submit"]');
+    msg.className = 'form-msg'; msg.textContent = '';
+    if(btn.disabled) return;
+    btn.disabled = true;
+    try{
+      const res = await fetch(API_BASE + '/api/wallet/withdraw', {
+        method:'POST',
+        headers:{'Content-Type':'application/json', 'Authorization': 'Bearer ' + getToken()},
+        body: JSON.stringify({
+          amount: Number(document.getElementById('withdrawAmount').value),
+          upiId: document.getElementById('withdrawUpi').value.trim()
+        })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not submit withdrawal.');
+      msg.textContent = 'Withdrawal requested! The team will process it manually and send it to your UPI ID.';
+      msg.className = 'form-msg ok';
+      this.reset();
+      loadWallet();
+    }catch(err){
+      msg.textContent = err.message;
+      msg.className = 'form-msg err';
+    }finally{
+      btn.disabled = false;
+    }
+  });
+}
+
+async function openWalletModal(){
+  if(!getToken()){
+    openAuthModal('login');
+    return;
+  }
+  injectWalletModal();
+  document.getElementById('walletModal').style.display = 'flex';
+  loadWallet();
+}
+function closeWalletModal(){
+  const m = document.getElementById('walletModal');
+  if(m) m.style.display = 'none';
+}
+
+const WALLET_TYPE_LABEL = {
+  bonus: 'Welcome bonus',
+  win: 'Match winnings',
+  withdrawal_hold: 'Withdrawal requested',
+  withdrawal_rejected: 'Withdrawal rejected — refunded',
+  adjustment: 'Adjustment'
+};
+
+async function loadWallet(){
+  try{
+    const res = await fetch(API_BASE + '/api/wallet', { headers:{ 'Authorization': 'Bearer ' + getToken() } });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || 'Could not load wallet.');
+    document.getElementById('walletBalance').textContent = '₹' + Number(data.balance).toLocaleString('en-IN');
+    document.getElementById('walletBonusBalance').textContent = '₹' + Number(data.bonusBalance).toLocaleString('en-IN');
+    const history = document.getElementById('walletHistory');
+    if(data.transactions.length === 0){
+      history.innerHTML = `<div style="color:var(--ash); font-size:12px;">No activity yet.</div>`;
+    }else{
+      history.innerHTML = data.transactions.map(t => `
+        <div style="display:flex; justify-content:space-between; font-size:12px; border-bottom:1px solid var(--line); padding-bottom:6px;">
+          <span style="color:var(--ash);">${WALLET_TYPE_LABEL[t.type] || t.type}${t.balanceType === 'bonus' ? ' <span style=\"color:var(--teal);\">(bonus)</span>' : ''}</span>
+          <span class="mono" style="color:${t.amount >= 0 ? 'var(--teal)' : 'var(--blood)'};">${t.amount >= 0 ? '+' : ''}₹${t.amount}</span>
+        </div>
+      `).join('');
+    }
+  }catch(err){
+    const msg = document.getElementById('walletMsg');
+    msg.textContent = err.message;
+    msg.className = 'form-msg err';
   }
 }
 
@@ -520,6 +640,41 @@ async function initSocialLinks(){
   window._socialLinks = links;
 }
 
+async function initPrizePool(){
+  const grid = document.getElementById('prizeGrid');
+  const totalEl = document.getElementById('poolTotal');
+  if(!grid) return;
+  let pool;
+  try{
+    const res = await fetch(API_BASE + '/api/prize-pool');
+    pool = await res.json();
+  }catch(e){
+    pool = { first:0, second:0, third:0, total:0, totalLabel:'Total prize pool distributed this month' };
+  }
+  const fmt = n => '₹' + Number(n || 0).toLocaleString('en-IN');
+  grid.innerHTML = `
+    <div class="prize-card first">
+      <div class="prize-rank">1ST PLACE</div>
+      <div class="prize-amt">${fmt(pool.first)}</div>
+      <div class="prize-sub">+ trophy & season badge</div>
+    </div>
+    <div class="prize-card">
+      <div class="prize-rank">2ND PLACE</div>
+      <div class="prize-amt">${fmt(pool.second)}</div>
+      <div class="prize-sub">+ season badge</div>
+    </div>
+    <div class="prize-card">
+      <div class="prize-rank">3RD PLACE</div>
+      <div class="prize-amt">${fmt(pool.third)}</div>
+      <div class="prize-sub">+ season badge</div>
+    </div>
+  `;
+  totalEl.innerHTML = `
+    <div class="num">${fmt(pool.total)}</div>
+    <div class="lbl">${pool.totalLabel || 'Total prize pool distributed this month'}</div>
+  `;
+}
+
 async function submitRegistration(payload, msg, form){
   const res = await fetch(API_BASE + '/api/register', {
     method:'POST',
@@ -535,7 +690,8 @@ async function submitRegistration(payload, msg, form){
   }
   if(!res.ok) throw new Error(data.error || 'Registration failed');
   const player = getPlayer();
-  msg.textContent = `You're in${player ? ', ' + player.ign : ''}. Room ID and password will be sent by SMS 10 minutes before your match.`;
+  const bonusNote = data.bonusApplied > 0 ? ` ₹${data.bonusApplied} bonus was applied toward your entry fee.` : '';
+  msg.textContent = `You're in${player ? ', ' + player.ign : ''}.${bonusNote} Room ID and password will be sent by SMS 10 minutes before your match.`;
   msg.className = 'form-msg ok';
   if(data.totalPlayers){
     const playersEl = document.getElementById('statPlayers');
@@ -556,23 +712,35 @@ function loadRazorpayScript(){
 }
 
 async function payAndRegister(match, payload, msg, form){
-  const loaded = await loadRazorpayScript();
-  if(!loaded){
-    msg.textContent = 'Could not load the payment gateway. Check your connection and try again.';
-    msg.className = 'form-msg err';
-    return;
-  }
   const player = getPlayer();
   let order;
   try{
     const orderRes = await fetch(API_BASE + '/api/payment/create-order', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ amount: match.entryFee, matchId: match.id })
+      method:'POST',
+      headers:{'Content-Type':'application/json', 'Authorization': 'Bearer ' + getToken()},
+      body: JSON.stringify({ matchId: match.id })
     });
     order = await orderRes.json();
     if(!orderRes.ok) throw new Error(order.error || 'Could not start payment.');
   }catch(err){
     msg.textContent = err.message;
+    msg.className = 'form-msg err';
+    return;
+  }
+
+  if(order.fullyCovered){
+    try{
+      await submitRegistration({ ...payload, matchId: match.id }, msg, form);
+    }catch(err){
+      msg.textContent = err.message || 'Registration failed.';
+      msg.className = 'form-msg err';
+    }
+    return;
+  }
+
+  const loaded = await loadRazorpayScript();
+  if(!loaded){
+    msg.textContent = 'Could not load the payment gateway. Check your connection and try again.';
     msg.className = 'form-msg err';
     return;
   }
@@ -582,7 +750,7 @@ async function payAndRegister(match, payload, msg, form){
     currency: order.currency,
     order_id: order.orderId,
     name: 'Ember Arena',
-    description: match.name,
+    description: order.bonusApplied > 0 ? `${match.name} (₹${order.bonusApplied} bonus applied)` : match.name,
     prefill: { name: player ? player.ign : '', email: player ? player.email : '', contact: player ? player.phone : '' },
     theme: { color: '#FF6B1A' },
     handler: async function(response){
@@ -691,6 +859,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   initSchedule();
   initNews();
   initSocialLinks();
+  initPrizePool();
   initRegForm();
   injectAuthModal();
   refreshAuthUI();

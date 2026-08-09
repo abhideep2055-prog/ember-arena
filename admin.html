@@ -73,6 +73,9 @@
     <button class="admin-tab active" id="tabRegs" onclick="switchAdminTab('regs')">Registrations</button>
     <button class="admin-tab" id="tabMatches" onclick="switchAdminTab('matches')">Tournaments</button>
     <button class="admin-tab" id="tabLeaderboard" onclick="switchAdminTab('leaderboard')">Leaderboard</button>
+    <button class="admin-tab" id="tabPrizes" onclick="switchAdminTab('prizes')">Prize Pool</button>
+    <button class="admin-tab" id="tabNews" onclick="switchAdminTab('news')">News</button>
+    <button class="admin-tab" id="tabWallet" onclick="switchAdminTab('wallet')">Wallet</button>
   </div>
 
   <div class="admin-panel active" id="panelRegs">
@@ -149,6 +152,75 @@
       <tbody id="squadBody"></tbody>
     </table>
   </div>
+
+  <div class="admin-panel" id="panelPrizes">
+    <div class="reg-card">
+      <h3 style="font-size:15px; margin-bottom:16px;">Edit prize pool</h3>
+      <form id="prizeForm">
+        <div class="form-2col">
+          <div class="form-row"><label for="pFirst">1st place (₹)</label><input type="number" id="pFirst" min="0" required></div>
+          <div class="form-row"><label for="pSecond">2nd place (₹)</label><input type="number" id="pSecond" min="0" required></div>
+        </div>
+        <div class="form-2col">
+          <div class="form-row"><label for="pThird">3rd place (₹)</label><input type="number" id="pThird" min="0" required></div>
+          <div class="form-row"><label for="pTotal">Total pool (₹)</label><input type="number" id="pTotal" min="0" required></div>
+        </div>
+        <div class="form-row"><label for="pLabel">Total pool caption</label><input type="text" id="pLabel" placeholder="Total prize pool distributed this month"></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Save prize pool</button>
+        <div class="form-msg" id="prizeMsg"></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="admin-panel" id="panelNews">
+    <div class="reg-card" style="margin-bottom:24px;">
+      <h3 style="font-size:15px; margin-bottom:16px;">Add a news item</h3>
+      <form id="addNewsForm">
+        <div class="form-2col">
+          <div class="form-row"><label for="nDate">Date (display text)</label><input type="text" id="nDate" placeholder="12 AUG 2026" required></div>
+          <div class="form-row"><label for="nCat">Category</label><input type="text" id="nCat" placeholder="Update / Announcement / Fair play" required></div>
+        </div>
+        <div class="form-row"><label for="nTitle">Title</label><input type="text" id="nTitle" placeholder="Season 4 leaderboard reset" required></div>
+        <div class="form-row"><label for="nBody">Body</label><input type="text" id="nBody" placeholder="Short description shown on the card" required></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Add news item</button>
+        <div class="form-msg" id="newsMsg"></div>
+      </form>
+    </div>
+    <table class="admin-table">
+      <thead><tr><th>Date</th><th>Category</th><th>Title</th><th></th></tr></thead>
+      <tbody id="newsAdminBody"></tbody>
+    </table>
+  </div>
+
+  <div class="admin-panel" id="panelWallet">
+    <div class="reg-card" style="margin-bottom:24px;">
+      <h3 style="font-size:15px; margin-bottom:4px;">💸 Credit match winnings</h3>
+      <p style="color:var(--ash); font-size:12px; margin-bottom:16px;">Adds money to a player's in-app wallet balance. This does NOT send real money — that still happens manually below via UPI/bank once they request a withdrawal.</p>
+      <form id="creditForm">
+        <div class="form-row"><label for="creditEmail">Player's email</label><input type="email" id="creditEmail" placeholder="player@example.com" required></div>
+        <div class="form-2col">
+          <div class="form-row"><label for="creditAmount">Amount (₹)</label><input type="number" id="creditAmount" step="1" required></div>
+          <div class="form-row"><label for="creditNote">Note</label><input type="text" id="creditNote" placeholder="e.g. Bermuda Squad Clash winner"></div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Credit wallet</button>
+        <div class="form-msg" id="creditMsg"></div>
+      </form>
+    </div>
+
+    <h3 style="font-size:15px; margin-bottom:4px;">Players</h3>
+    <p style="color:var(--ash); font-size:12px; margin-bottom:16px;">Find a player by their Free Fire UID from the match, then hit Credit to fill the form above.</p>
+    <table class="admin-table">
+      <thead><tr><th>Wallet ID</th><th>IGN</th><th>Free Fire UID(s)</th><th>Email</th><th>Withdrawable</th><th>Bonus</th><th></th></tr></thead>
+      <tbody id="playersBody"></tbody>
+    </table>
+
+    <h3 style="font-size:15px; margin:32px 0 4px;">Withdrawal requests</h3>
+    <p style="color:var(--ash); font-size:12px; margin-bottom:16px;">Pay the player via UPI yourself, then click "Mark paid" here. Remember: 30% TDS applies to net winnings under Section 194BA — talk to a CA about how to handle this before paying out large amounts.</p>
+    <table class="admin-table">
+      <thead><tr><th>Player</th><th>Amount</th><th>UPI ID</th><th>Status</th><th>Requested</th><th></th></tr></thead>
+      <tbody id="withdrawalBody"></tbody>
+    </table>
+  </div>
 </div>
 
 <script>
@@ -160,11 +232,20 @@
     document.getElementById('panelRegs').classList.toggle('active', tab === 'regs');
     document.getElementById('panelMatches').classList.toggle('active', tab === 'matches');
     document.getElementById('panelLeaderboard').classList.toggle('active', tab === 'leaderboard');
+    document.getElementById('panelPrizes').classList.toggle('active', tab === 'prizes');
+    document.getElementById('panelNews').classList.toggle('active', tab === 'news');
+    document.getElementById('panelWallet').classList.toggle('active', tab === 'wallet');
     document.getElementById('tabRegs').classList.toggle('active', tab === 'regs');
     document.getElementById('tabMatches').classList.toggle('active', tab === 'matches');
     document.getElementById('tabLeaderboard').classList.toggle('active', tab === 'leaderboard');
+    document.getElementById('tabPrizes').classList.toggle('active', tab === 'prizes');
+    document.getElementById('tabNews').classList.toggle('active', tab === 'news');
+    document.getElementById('tabWallet').classList.toggle('active', tab === 'wallet');
     if(tab === 'matches') loadSchedule();
     if(tab === 'leaderboard') loadLeaderboard();
+    if(tab === 'prizes') loadPrizePool();
+    if(tab === 'news') loadNewsAdmin();
+    if(tab === 'wallet'){ loadWithdrawals(); loadPlayers(); }
   }
 
   async function doLogin(){
@@ -463,6 +544,231 @@
       msg.textContent = e.message;
       msg.className = 'form-msg err';
     }
+  }
+
+  // ---- Wallet (admin) ----
+
+  async function loadWithdrawals(){
+    const key = getKey();
+    try{
+      const res = await fetch(API_BASE + '/api/admin/withdrawals', { headers:{'x-admin-key': key} });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not load withdrawals.');
+      const statusBadge = {
+        pending: '<span class="badge badge-open">Pending</span>',
+        paid: '<span class="badge badge-verified">Paid</span>',
+        rejected: '<span class="badge badge-live">Rejected</span>',
+      };
+      document.getElementById('withdrawalBody').innerHTML = data.length === 0
+        ? `<tr><td colspan="6" style="color:var(--ash); text-align:center; padding:24px;">No withdrawal requests yet.</td></tr>`
+        : data.map(w => `
+            <tr>
+              <td>${w.ign}<br><span style="color:var(--ash); font-size:11px;">${w.email}</span></td>
+              <td class="mono">₹${w.amount}</td>
+              <td class="mono">${w.upiId || '—'}</td>
+              <td>${statusBadge[w.status] || w.status}</td>
+              <td class="mono" style="font-size:11px;">${new Date(w.createdAt).toLocaleString('en-IN')}</td>
+              <td>${w.status === 'pending' ? `
+                <button type="button" class="btn btn-primary btn-sm" onclick="payWithdrawal(${w.id})">Mark paid</button>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="rejectWithdrawalReq(${w.id})">Reject</button>
+              ` : ''}</td>
+            </tr>
+          `).join('');
+    }catch(e){
+      alert(e.message);
+    }
+  }
+
+  async function payWithdrawal(id){
+    if(!confirm('Confirm you have already sent the money via UPI/bank transfer to this player?')) return;
+    const key = getKey();
+    try{
+      const res = await fetch(API_BASE + `/api/admin/withdrawals/${id}/pay`, { method:'POST', headers:{'x-admin-key': key} });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not update.');
+      loadWithdrawals();
+    }catch(e){ alert(e.message); }
+  }
+
+  async function rejectWithdrawalReq(id){
+    if(!confirm('Reject this request? The amount will be refunded to the player\'s wallet.')) return;
+    const key = getKey();
+    try{
+      const res = await fetch(API_BASE + `/api/admin/withdrawals/${id}/reject`, { method:'POST', headers:{'x-admin-key': key} });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not update.');
+      loadWithdrawals();
+    }catch(e){ alert(e.message); }
+  }
+
+  document.getElementById('creditForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const key = getKey();
+    const msg = document.getElementById('creditMsg');
+    msg.className = 'form-msg'; msg.textContent = '';
+    try{
+      const res = await fetch(API_BASE + '/api/admin/wallet/credit', {
+        method:'POST',
+        headers:{'Content-Type':'application/json', 'x-admin-key': key},
+        body: JSON.stringify({
+          email: document.getElementById('creditEmail').value.trim(),
+          amount: Number(document.getElementById('creditAmount').value),
+          note: document.getElementById('creditNote').value.trim()
+        })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not credit wallet.');
+      msg.textContent = `Credited ${data.player.ign}'s wallet. New balance: ₹${data.newBalance}`;
+      msg.className = 'form-msg ok';
+      this.reset();
+    }catch(err){
+      msg.textContent = err.message;
+      msg.className = 'form-msg err';
+    }
+  });
+
+  // ---- Prize pool ----
+
+  async function loadPrizePool(){
+    try{
+      const res = await fetch(API_BASE + '/api/prize-pool');
+      const p = await res.json();
+      document.getElementById('pFirst').value = p.first;
+      document.getElementById('pSecond').value = p.second;
+      document.getElementById('pThird').value = p.third;
+      document.getElementById('pTotal').value = p.total;
+      document.getElementById('pLabel').value = p.totalLabel || '';
+    }catch(e){}
+  }
+
+  document.getElementById('prizeForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const key = getKey();
+    const msg = document.getElementById('prizeMsg');
+    msg.className = 'form-msg'; msg.textContent = '';
+    try{
+      const res = await fetch(API_BASE + '/api/admin/prize-pool', {
+        method:'POST',
+        headers:{'Content-Type':'application/json', 'x-admin-key': key},
+        body: JSON.stringify({
+          first: Number(document.getElementById('pFirst').value),
+          second: Number(document.getElementById('pSecond').value),
+          third: Number(document.getElementById('pThird').value),
+          total: Number(document.getElementById('pTotal').value),
+          totalLabel: document.getElementById('pLabel').value.trim(),
+        })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not save.');
+      msg.textContent = 'Saved.';
+      msg.className = 'form-msg ok';
+    }catch(err){
+      msg.textContent = err.message;
+      msg.className = 'form-msg err';
+    }
+  });
+
+  // ---- News ----
+
+  let newsCache = [];
+
+  async function loadNewsAdmin(){
+    try{
+      const res = await fetch(API_BASE + '/api/news');
+      newsCache = await res.json();
+      renderNewsAdmin();
+    }catch(e){}
+  }
+
+  function renderNewsAdmin(){
+    document.getElementById('newsAdminBody').innerHTML = newsCache.length === 0
+      ? `<tr><td colspan="4" style="color:var(--ash); text-align:center; padding:24px;">No news items yet.</td></tr>`
+      : newsCache.map((n, i) => `
+          <tr>
+            <td class="mono">${n.date}</td>
+            <td>${n.cat}</td>
+            <td>${n.title}</td>
+            <td><button type="button" class="btn btn-ghost btn-sm" onclick="deleteNews(${i})">Delete</button></td>
+          </tr>
+        `).join('');
+  }
+
+  async function saveNews(){
+    const key = getKey();
+    const res = await fetch(API_BASE + '/api/admin/news', {
+      method:'POST',
+      headers:{'Content-Type':'application/json', 'x-admin-key': key},
+      body: JSON.stringify(newsCache)
+    });
+    if(!res.ok){ const d = await res.json().catch(()=>({})); throw new Error(d.error || 'Could not save.'); }
+  }
+
+  async function deleteNews(i){
+    if(!confirm('Delete this news item?')) return;
+    const removed = newsCache.splice(i, 1);
+    try{
+      await saveNews();
+      renderNewsAdmin();
+    }catch(e){
+      newsCache.splice(i, 0, removed[0]);
+      alert(e.message);
+    }
+  }
+
+  document.getElementById('addNewsForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const msg = document.getElementById('newsMsg');
+    msg.className = 'form-msg'; msg.textContent = '';
+    const item = {
+      date: document.getElementById('nDate').value.trim(),
+      cat: document.getElementById('nCat').value.trim(),
+      title: document.getElementById('nTitle').value.trim(),
+      body: document.getElementById('nBody').value.trim(),
+    };
+    newsCache.unshift(item);
+    try{
+      await saveNews();
+      msg.textContent = 'News item added.';
+      msg.className = 'form-msg ok';
+      renderNewsAdmin();
+      this.reset();
+    }catch(err){
+      newsCache.shift();
+      msg.textContent = err.message;
+      msg.className = 'form-msg err';
+    }
+  });
+
+  // ---- Players lookup (for crediting wallets) ----
+
+  async function loadPlayers(){
+    const key = getKey();
+    try{
+      const res = await fetch(API_BASE + '/api/admin/players', { headers:{'x-admin-key': key} });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not load players.');
+      document.getElementById('playersBody').innerHTML = data.length === 0
+        ? `<tr><td colspan="7" style="color:var(--ash); text-align:center; padding:24px;">No players yet.</td></tr>`
+        : data.map(p => `
+            <tr>
+              <td class="mono" style="font-size:11px;">${p.walletId}</td>
+              <td>${p.ign}</td>
+              <td class="mono">${(p.uids || []).join(', ') || '—'}</td>
+              <td style="font-size:12px;">${p.email}</td>
+              <td class="mono">₹${p.walletBalance}</td>
+              <td class="mono">₹${p.bonusBalance}</td>
+              <td><button type="button" class="btn btn-primary btn-sm" onclick="quickCredit('${p.email.replace(/'/g,"\\'")}')">Credit</button></td>
+            </tr>
+          `).join('');
+    }catch(e){
+      alert(e.message);
+    }
+  }
+
+  function quickCredit(email){
+    document.getElementById('creditEmail').value = email;
+    document.getElementById('creditAmount').focus();
+    document.getElementById('creditForm').scrollIntoView({behavior:'smooth'});
   }
 
   document.addEventListener('DOMContentLoaded', showDashboard);

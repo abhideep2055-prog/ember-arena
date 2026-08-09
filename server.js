@@ -16,6 +16,7 @@ const regStore = require('./registrations');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const playerStore = require('./players');
+const walletStore = require('./wallet');
 const pushStore = require('./push');
 const contentStore = require('./content');
 
@@ -119,6 +120,11 @@ app.post('/api/auth/signup', async (req, res) => {
       passwordHash,
     };
     await playerStore.createPlayer(player);
+    try {
+      await walletStore.adjustBonus(player.id, 10, 'bonus', 'Welcome bonus');
+    } catch (bonusErr) {
+      console.error('Welcome bonus credit failed:', bonusErr.message);
+    }
     const token = signToken(player);
     res.json({ token, player: { id: player.id, ign: player.ign, email: player.email, phone: player.phone } });
   } catch (e) {
@@ -160,6 +166,48 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ player: { id: req.player.sub, ign: req.player.ign, email: req.player.email, phone: req.player.phone } });
+});
+
+// ---- Wallet (players) ----
+
+const MIN_WITHDRAWAL = 50;
+
+app.get('/api/wallet', requireAuth, async (req, res) => {
+  try {
+    const wallet = await walletStore.getWallet(req.player.sub);
+    const transactions = await walletStore.getTransactions(req.player.sub);
+    res.json({ balance: wallet.balance, bonusBalance: wallet.bonusBalance, transactions, minWithdrawal: MIN_WITHDRAWAL });
+  } catch (e) {
+    if (e.message === 'NO_DB') {
+      return res.status(503).json({ error: 'Wallet needs a database connected. Set DATABASE_URL in backend/.env.' });
+    }
+    console.error('Wallet fetch error:', e);
+    res.status(500).json({ error: 'Could not load your wallet.' });
+  }
+});
+
+app.post('/api/wallet/withdraw', requireAuth, async (req, res) => {
+  const { amount, upiId } = req.body || {};
+  const amt = Number(amount);
+  if (!amt || amt < MIN_WITHDRAWAL) {
+    return res.status(400).json({ error: `Minimum withdrawal is ₹${MIN_WITHDRAWAL}.` });
+  }
+  if (!upiId || String(upiId).trim().length < 3) {
+    return res.status(400).json({ error: 'Enter a valid UPI ID.' });
+  }
+  try {
+    const id = await walletStore.createWithdrawalRequest(req.player.sub, amt, String(upiId).trim());
+    res.json({ success: true, requestId: id });
+  } catch (e) {
+    if (e.message === 'NO_DB') {
+      return res.status(503).json({ error: 'Wallet needs a database connected. Set DATABASE_URL in backend/.env.' });
+    }
+    if (e.code === 'INSUFFICIENT_FUNDS') {
+      return res.status(400).json({ error: 'Insufficient wallet balance.' });
+    }
+    console.error('Withdrawal request error:', e);
+    res.status(500).json({ error: 'Could not submit withdrawal request.' });
+  }
 });
 
 // ---- Push notifications ----
@@ -211,9 +259,22 @@ app.post('/api/register', requireAuth, async (req, res) => {
       return res.status(409).json({ error: 'This Free Fire UID is already registered for this match.' });
     }
     const match = matchId ? (await contentStore.getContent('schedule', [])).find(m => m.id === matchId) : null;
-    if (match && match.entryFee > 0 && !paymentId) {
-      return res.status(402).json({ error: 'This match requires payment before registration.' });
+    const entryFee = match ? Number(match.entryFee) || 0 : 0;
+
+    let bonusApplied = 0;
+    if (entryFee > 0) {
+      try {
+        const wallet = await walletStore.getWallet(playerId);
+        if (wallet) bonusApplied = Math.min(wallet.bonusBalance, entryFee);
+      } catch (e) {
+        if (e.message !== 'NO_DB') console.error('Bonus lookup error:', e);
+      }
+      const remaining = Math.round((entryFee - bonusApplied) * 100) / 100;
+      if (remaining > 0 && !paymentId) {
+        return res.status(402).json({ error: 'This match requires payment before registration.' });
+      }
     }
+
     const entry = {
       id: Date.now().toString(),
       playerId,
@@ -227,8 +288,17 @@ app.post('/api/register', requireAuth, async (req, res) => {
       createdAt: new Date().toISOString(),
     };
     await regStore.addRegistration(entry);
+
+    if (bonusApplied > 0) {
+      try {
+        await walletStore.adjustBonus(playerId, -bonusApplied, 'entry_fee', `Entry fee for ${match.name}`);
+      } catch (e) {
+        console.error('Bonus deduction failed after registration:', e.message);
+      }
+    }
+
     const total = await regStore.countRegistrations();
-    res.json({ success: true, entry, totalPlayers: BASE_PLAYER_COUNT + total });
+    res.json({ success: true, entry, bonusApplied, totalPlayers: BASE_PLAYER_COUNT + total });
   } catch (e) {
     console.error('Registration error:', e);
     res.status(500).json({ error: 'Something went wrong saving your registration. Please try again.' });
@@ -237,21 +307,52 @@ app.post('/api/register', requireAuth, async (req, res) => {
 
 // ---- Payments (Razorpay) ----
 
-app.post('/api/payment/create-order', async (req, res) => {
+app.post('/api/payment/create-order', requireAuth, async (req, res) => {
+  const { matchId } = req.body || {};
+  if (!matchId) {
+    return res.status(400).json({ error: 'matchId is required.' });
+  }
+  const schedule = await contentStore.getContent('schedule', []);
+  const match = schedule.find(m => m.id === matchId);
+  if (!match) {
+    return res.status(404).json({ error: 'Tournament not found.' });
+  }
+  const entryFee = Number(match.entryFee) || 0;
+  if (entryFee <= 0) {
+    return res.status(400).json({ error: 'This tournament is free — no payment needed.' });
+  }
+
+  let bonusApplied = 0;
+  try {
+    const wallet = await walletStore.getWallet(req.player.sub);
+    if (wallet) bonusApplied = Math.min(wallet.bonusBalance, entryFee);
+  } catch (e) {
+    if (e.message !== 'NO_DB') console.error('Bonus lookup error:', e);
+  }
+  const remaining = Math.round((entryFee - bonusApplied) * 100) / 100;
+
+  if (remaining <= 0) {
+    return res.json({ fullyCovered: true, bonusApplied: entryFee });
+  }
+
   if (!razorpay) {
     return res.status(503).json({ error: 'Payment gateway is not configured yet. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to backend/.env.' });
   }
-  const { amount, matchId } = req.body || {};
-  if (!amount || Number(amount) <= 0) {
-    return res.status(400).json({ error: 'Invalid amount.' });
-  }
   try {
     const order = await razorpay.orders.create({
-      amount: Math.round(Number(amount) * 100), // paise
+      amount: Math.round(remaining * 100), // paise
       currency: 'INR',
-      receipt: `receipt_${matchId || 'na'}_${Date.now()}`,
+      receipt: `receipt_${matchId}_${Date.now()}`,
     });
-    res.json({ orderId: order.id, amount: order.amount, currency: order.currency, keyId: process.env.RAZORPAY_KEY_ID });
+    res.json({
+      fullyCovered: false,
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      keyId: process.env.RAZORPAY_KEY_ID,
+      bonusApplied,
+      remaining,
+    });
   } catch (e) {
     res.status(500).json({ error: 'Could not create payment order.' });
   }
@@ -304,6 +405,69 @@ app.get('/api/admin/registrations', async (req, res) => {
   res.json(data);
 });
 
+// ---- Wallet (admin) ----
+
+app.get('/api/admin/withdrawals', async (req, res) => {
+  try {
+    res.json(await walletStore.listWithdrawals());
+  } catch (e) {
+    if (e.message === 'NO_DB') {
+      return res.status(503).json({ error: 'Wallet needs a database connected.' });
+    }
+    res.status(500).json({ error: 'Could not load withdrawal requests.' });
+  }
+});
+
+app.post('/api/admin/withdrawals/:id/pay', async (req, res) => {
+  try {
+    await walletStore.markWithdrawalPaid(Number(req.params.id));
+    res.json({ success: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/withdrawals/:id/reject', async (req, res) => {
+  try {
+    await walletStore.rejectWithdrawal(Number(req.params.id));
+    res.json({ success: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/wallet/credit', async (req, res) => {
+  const { email, amount, note } = req.body || {};
+  const amt = Number(amount);
+  if (!email || !amt) {
+    return res.status(400).json({ error: 'Email and amount are required.' });
+  }
+  try {
+    const player = await walletStore.findPlayerByEmailOrUid(String(email).trim());
+    if (!player) return res.status(404).json({ error: 'No player found with that email.' });
+    const newBalance = await walletStore.adjustWallet(player.id, amt, amt > 0 ? 'win' : 'adjustment', note || null);
+    res.json({ success: true, player: { ign: player.ign, email: player.email }, newBalance });
+  } catch (e) {
+    if (e.message === 'NO_DB') {
+      return res.status(503).json({ error: 'Wallet needs a database connected.' });
+    }
+    console.error('Wallet credit error:', e);
+    res.status(500).json({ error: 'Could not credit wallet.' });
+  }
+});
+
+app.get('/api/admin/players', async (req, res) => {
+  try {
+    res.json(await walletStore.listPlayersWithUids());
+  } catch (e) {
+    if (e.message === 'NO_DB') {
+      return res.status(503).json({ error: 'Player accounts need a database connected.' });
+    }
+    console.error('Players list error:', e);
+    res.status(500).json({ error: 'Could not load players.' });
+  }
+});
+
 app.post('/api/admin/leaderboard', async (req, res) => {
   if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Expected an array of squads.' });
   await contentStore.setContent('leaderboard', req.body);
@@ -319,6 +483,30 @@ app.post('/api/admin/schedule', async (req, res) => {
 app.post('/api/admin/news', async (req, res) => {
   if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Expected an array of news items.' });
   await contentStore.setContent('news', req.body);
+  res.json({ success: true });
+});
+
+// ---- Prize pool ----
+
+const PRIZE_POOL_DEFAULT = {
+  first: 0, second: 0, third: 0,
+  total: 0, totalLabel: 'Total prize pool distributed this month',
+};
+
+app.get('/api/prize-pool', async (req, res) => {
+  res.json(await contentStore.getContent('prizePool', PRIZE_POOL_DEFAULT));
+});
+
+app.post('/api/admin/prize-pool', async (req, res) => {
+  const body = req.body || {};
+  const clean = {
+    first: Number(body.first) || 0,
+    second: Number(body.second) || 0,
+    third: Number(body.third) || 0,
+    total: Number(body.total) || 0,
+    totalLabel: body.totalLabel ? String(body.totalLabel).slice(0, 120) : PRIZE_POOL_DEFAULT.totalLabel,
+  };
+  await contentStore.setContent('prizePool', clean);
   res.json({ success: true });
 });
 
