@@ -248,7 +248,7 @@ app.post('/api/push/unsubscribe', requireAuth, async (req, res) => {
 // ---- Registration (requires a logged-in player) ----
 
 app.post('/api/register', requireAuth, async (req, res) => {
-  const { uid, mode, matchId, paymentId } = req.body || {};
+  const { uid, mode, matchId, paymentId, payerUpiId } = req.body || {};
   if (!uid) {
     return res.status(400).json({ error: 'Free Fire UID is required.' });
   }
@@ -262,6 +262,7 @@ app.post('/api/register', requireAuth, async (req, res) => {
     const entryFee = match ? Number(match.entryFee) || 0 : 0;
 
     let bonusApplied = 0;
+    let paymentStatus = 'none';
     if (entryFee > 0) {
       try {
         const wallet = await walletStore.getWallet(playerId);
@@ -270,8 +271,15 @@ app.post('/api/register', requireAuth, async (req, res) => {
         if (e.message !== 'NO_DB') console.error('Bonus lookup error:', e);
       }
       const remaining = Math.round((entryFee - bonusApplied) * 100) / 100;
-      if (remaining > 0 && !paymentId) {
-        return res.status(402).json({ error: 'This match requires payment before registration.' });
+      if (remaining > 0) {
+        // Manual UPI flow: needs the player's own UPI ID as proof of payment,
+        // or a Razorpay paymentId if that's configured instead.
+        if (!payerUpiId && !paymentId) {
+          return res.status(402).json({ error: 'Payment is required before registration.' });
+        }
+        paymentStatus = paymentId ? 'confirmed' : 'pending';
+      } else {
+        paymentStatus = 'confirmed'; // fully covered by bonus, nothing to verify
       }
     }
 
@@ -285,6 +293,8 @@ app.post('/api/register', requireAuth, async (req, res) => {
       phone: phone || '',
       matchId: matchId || null,
       paymentId: paymentId || null,
+      paymentStatus,
+      payerUpiId: payerUpiId ? String(payerUpiId).trim().slice(0, 60) : null,
       createdAt: new Date().toISOString(),
     };
     await regStore.addRegistration(entry);
@@ -335,8 +345,10 @@ app.post('/api/payment/create-order', requireAuth, async (req, res) => {
     return res.json({ fullyCovered: true, bonusApplied: entryFee });
   }
 
+  // Not configured with Razorpay? That's fine — the frontend falls back to
+  // showing the admin's UPI ID / QR code for manual payment instead.
   if (!razorpay) {
-    return res.status(503).json({ error: 'Payment gateway is not configured yet. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to backend/.env.' });
+    return res.json({ fullyCovered: false, razorpayAvailable: false, bonusApplied, remaining });
   }
   try {
     const order = await razorpay.orders.create({
@@ -346,6 +358,7 @@ app.post('/api/payment/create-order', requireAuth, async (req, res) => {
     });
     res.json({
       fullyCovered: false,
+      razorpayAvailable: true,
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
@@ -403,6 +416,15 @@ app.use('/api/admin', requireAdmin);
 app.get('/api/admin/registrations', async (req, res) => {
   const data = await regStore.allRegistrations();
   res.json(data);
+});
+
+app.post('/api/admin/registrations/:id/confirm-payment', async (req, res) => {
+  try {
+    await regStore.confirmPayment(req.params.id);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 // ---- Wallet (admin) ----
@@ -540,6 +562,24 @@ app.post('/api/admin/social-links', async (req, res) => {
     clean[key] = body[key] ? String(body[key]).slice(0, 300) : '';
   }
   await contentStore.setContent('socialLinks', clean);
+  res.json({ success: true });
+});
+
+// ---- Manual UPI payment settings ----
+
+const PAYMENT_SETTINGS_DEFAULT = { upiId: '', payeeName: 'Ember Arena' };
+
+app.get('/api/payment-settings', async (req, res) => {
+  res.json(await contentStore.getContent('paymentSettings', PAYMENT_SETTINGS_DEFAULT));
+});
+
+app.post('/api/admin/payment-settings', async (req, res) => {
+  const body = req.body || {};
+  const clean = {
+    upiId: body.upiId ? String(body.upiId).trim().slice(0, 100) : '',
+    payeeName: body.payeeName ? String(body.payeeName).trim().slice(0, 60) : PAYMENT_SETTINGS_DEFAULT.payeeName,
+  };
+  await contentStore.setContent('paymentSettings', clean);
   res.json({ success: true });
 });
 

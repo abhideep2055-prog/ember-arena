@@ -691,7 +691,10 @@ async function submitRegistration(payload, msg, form){
   if(!res.ok) throw new Error(data.error || 'Registration failed');
   const player = getPlayer();
   const bonusNote = data.bonusApplied > 0 ? ` ₹${data.bonusApplied} bonus was applied toward your entry fee.` : '';
-  msg.textContent = `You're in${player ? ', ' + player.ign : ''}.${bonusNote} Room ID and password will be sent by SMS 10 minutes before your match.`;
+  const pendingNote = data.entry && data.entry.paymentStatus === 'pending'
+    ? ' Your slot is held pending payment confirmation by the team.'
+    : '';
+  msg.textContent = `You're in${player ? ', ' + player.ign : ''}.${bonusNote}${pendingNote} Room ID and password will be sent by SMS 10 minutes before your match.`;
   msg.className = 'form-msg ok';
   if(data.totalPlayers){
     const playersEl = document.getElementById('statPlayers');
@@ -735,6 +738,11 @@ async function payAndRegister(match, payload, msg, form){
       msg.textContent = err.message || 'Registration failed.';
       msg.className = 'form-msg err';
     }
+    return;
+  }
+
+  if(!order.razorpayAvailable){
+    openUpiPaymentModal(match, payload, order.remaining, order.bonusApplied, msg, form);
     return;
   }
 
@@ -787,6 +795,94 @@ async function payAndRegister(match, payload, msg, form){
     msg.className = 'form-msg err';
   });
   rzp.open();
+}
+
+// ---- Manual UPI payment modal ----
+
+function injectUpiModal(){
+  if(document.getElementById('upiModal')) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div id="upiModal" class="auth-overlay">
+      <div class="auth-modal" style="max-width:380px; text-align:center;">
+        <button class="auth-close" onclick="closeUpiModal()" aria-label="Close">&times;</button>
+        <h3 style="font-size:18px; margin-bottom:4px;">Pay entry fee</h3>
+        <div id="upiAmountLine" style="color:var(--ash); font-size:13px; margin-bottom:16px;"></div>
+        <img id="upiQrImg" src="" alt="UPI QR code" style="width:200px; height:200px; border-radius:8px; background:#fff; padding:8px; margin:0 auto 16px;">
+        <div style="display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:20px;">
+          <span class="mono" id="upiIdText" style="font-size:14px; color:var(--gold);"></span>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="copyUpiId()">Copy</button>
+        </div>
+        <form id="upiConfirmForm" style="text-align:left;">
+          <div class="form-row"><label for="upiPayerField">Your UPI ID (the one you paid from)</label><input type="text" id="upiPayerField" placeholder="yourname@upi" required></div>
+          <button type="submit" class="btn btn-primary" style="width:100%;">I've paid — submit registration</button>
+        </form>
+        <div class="form-msg" id="upiModalMsg"></div>
+        <p style="color:var(--ash); font-size:11px; margin-top:12px;">Your slot will show as pending until the team confirms your payment.</p>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+  document.getElementById('upiModal').addEventListener('click', function(e){
+    if(e.target === this) closeUpiModal();
+  });
+}
+
+let _upiPendingContext = null;
+
+async function openUpiPaymentModal(match, payload, amount, bonusApplied, msg, form){
+  injectUpiModal();
+  let settings;
+  try{
+    const res = await fetch(API_BASE + '/api/payment-settings');
+    settings = await res.json();
+  }catch(e){
+    settings = { upiId: '', payeeName: 'Ember Arena' };
+  }
+  if(!settings.upiId){
+    msg.textContent = 'Payment is not set up yet. Please contact the team.';
+    msg.className = 'form-msg err';
+    return;
+  }
+  _upiPendingContext = { match, payload, msg, form };
+  const upiUri = `upi://pay?pa=${encodeURIComponent(settings.upiId)}&pn=${encodeURIComponent(settings.payeeName)}&am=${amount}&cu=INR&tn=${encodeURIComponent(match.name)}`;
+  document.getElementById('upiQrImg').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUri)}`;
+  document.getElementById('upiIdText').textContent = settings.upiId;
+  document.getElementById('upiAmountLine').textContent =
+    bonusApplied > 0 ? `Pay ₹${amount} (₹${bonusApplied} bonus already applied)` : `Pay ₹${amount} to register`;
+  document.getElementById('upiModalMsg').textContent = '';
+  document.getElementById('upiModalMsg').className = 'form-msg';
+  document.getElementById('upiModal').style.display = 'flex';
+
+  const confirmForm = document.getElementById('upiConfirmForm');
+  confirmForm.onsubmit = async function(e){
+    e.preventDefault();
+    const upiMsg = document.getElementById('upiModalMsg');
+    const btn = confirmForm.querySelector('button[type="submit"]');
+    upiMsg.className = 'form-msg'; upiMsg.textContent = '';
+    if(btn.disabled) return;
+    btn.disabled = true;
+    try{
+      const payerUpiId = document.getElementById('upiPayerField').value.trim();
+      await submitRegistration({ ...payload, matchId: match.id, payerUpiId }, msg, form);
+      closeUpiModal();
+    }catch(err){
+      upiMsg.textContent = err.message || 'Could not submit registration.';
+      upiMsg.className = 'form-msg err';
+    }finally{
+      btn.disabled = false;
+    }
+  };
+}
+
+function closeUpiModal(){
+  const m = document.getElementById('upiModal');
+  if(m) m.style.display = 'none';
+}
+
+function copyUpiId(){
+  const text = document.getElementById('upiIdText').textContent;
+  navigator.clipboard?.writeText(text).catch(()=>{});
 }
 
 function initRegForm(){

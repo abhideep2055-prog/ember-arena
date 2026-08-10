@@ -26,6 +26,8 @@ async function initDb() {
     );
   `);
   await pool.query(`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS player_id TEXT;`);
+  await pool.query(`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'none';`);
+  await pool.query(`ALTER TABLE registrations ADD COLUMN IF NOT EXISTS payer_upi_id TEXT;`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS players (
       id TEXT PRIMARY KEY,

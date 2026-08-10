@@ -23,9 +23,12 @@ function writeJsonRegs(data) {
 async function addRegistration(entry) {
   if (pool) {
     await pool.query(
-      `INSERT INTO registrations (id, player_id, ign, uid, mode, email, phone, match_id, payment_id, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [entry.id, entry.playerId || null, entry.ign, entry.uid, entry.mode, entry.email, entry.phone, entry.matchId, entry.paymentId, entry.createdAt]
+      `INSERT INTO registrations (id, player_id, ign, uid, mode, email, phone, match_id, payment_id, payment_status, payer_upi_id, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [
+        entry.id, entry.playerId || null, entry.ign, entry.uid, entry.mode, entry.email, entry.phone,
+        entry.matchId, entry.paymentId || null, entry.paymentStatus || 'none', entry.payerUpiId || null, entry.createdAt,
+      ]
     );
   } else {
     const regs = readJsonRegs();
@@ -59,7 +62,9 @@ async function countRegistrations() {
 async function allRegistrations() {
   if (pool) {
     const res = await pool.query(
-      `SELECT id, player_id AS "playerId", ign, uid, mode, email, phone, match_id AS "matchId", payment_id AS "paymentId", created_at AS "createdAt"
+      `SELECT id, player_id AS "playerId", ign, uid, mode, email, phone, match_id AS "matchId",
+              payment_id AS "paymentId", payment_status AS "paymentStatus", payer_upi_id AS "payerUpiId",
+              created_at AS "createdAt"
        FROM registrations ORDER BY created_at DESC`
     );
     return res.rows;
@@ -81,4 +86,27 @@ async function playerIdsForMatch(matchId) {
   }
 }
 
-module.exports = { addRegistration, findDuplicate, countRegistrations, allRegistrations, playerIdsForMatch };
+async function confirmPayment(registrationId) {
+  if (pool) {
+    const res = await pool.query(
+      `UPDATE registrations SET payment_status = 'confirmed' WHERE id = $1 RETURNING id`,
+      [registrationId]
+    );
+    if (res.rowCount === 0) throw new Error('Registration not found.');
+  } else {
+    const regs = readJsonRegs();
+    const reg = regs.find(r => r.id === registrationId);
+    if (!reg) throw new Error('Registration not found.');
+    reg.paymentStatus = 'confirmed';
+    writeJsonRegs(regs);
+  }
+}
+
+module.exports = {
+  addRegistration,
+  findDuplicate,
+  countRegistrations,
+  allRegistrations,
+  playerIdsForMatch,
+  confirmPayment,
+};

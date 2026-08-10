@@ -69,6 +69,17 @@
     <div class="form-msg" id="socialMsg"></div>
   </div>
 
+  <div class="reg-card" style="margin-bottom:24px;">
+    <h3 style="font-size:15px; margin-bottom:4px;">💳 Payment settings (manual UPI)</h3>
+    <p style="color:var(--ash); font-size:12px; margin-bottom:16px;">When a player registers for a paid tournament, they'll see your UPI ID and a QR code to pay. They submit their own UPI ID as proof, and you confirm the payment manually in the Registrations tab.</p>
+    <div class="form-2col">
+      <div class="form-row"><label for="payUpiId">Your UPI ID</label><input type="text" id="payUpiId" placeholder="yourname@bank"></div>
+      <div class="form-row"><label for="payName">Name shown to players</label><input type="text" id="payName" placeholder="Ember Arena"></div>
+    </div>
+    <button type="button" class="btn btn-primary" onclick="savePaymentSettings()">Save payment settings</button>
+    <div class="form-msg" id="paymentSettingsMsg"></div>
+  </div>
+
   <div class="admin-tabs">
     <button class="admin-tab active" id="tabRegs" onclick="switchAdminTab('regs')">Registrations</button>
     <button class="admin-tab" id="tabMatches" onclick="switchAdminTab('matches')">Tournaments</button>
@@ -82,7 +93,7 @@
     <p id="countLabel" style="color:var(--ash); font-size:13px; margin-bottom:8px;"></p>
     <table class="admin-table">
       <thead>
-        <tr><th>IGN</th><th>UID</th><th>Mode</th><th>Email</th><th>Phone</th><th>Match</th><th>Paid</th><th>Registered</th></tr>
+        <tr><th>IGN</th><th>UID</th><th>Mode</th><th>Email</th><th>Phone</th><th>Match</th><th>Payment</th><th>Payer UPI</th><th>Registered</th></tr>
       </thead>
       <tbody id="regBody"></tbody>
     </table>
@@ -283,7 +294,13 @@
       document.getElementById('dashView').style.display = 'block';
       loadMaintenanceStatus();
       loadSocialLinks();
+      loadPaymentSettings();
       document.getElementById('countLabel').textContent = `${data.length} total registration${data.length===1?'':'s'}`;
+      const paymentBadge = {
+        none: '<span class="badge badge-soon">Free</span>',
+        confirmed: '<span class="badge badge-verified">Confirmed</span>',
+        pending: '<span class="badge badge-open">Pending</span>',
+      };
       document.getElementById('regBody').innerHTML = data.map(r => `
         <tr>
           <td>${r.ign}</td>
@@ -292,12 +309,55 @@
           <td>${r.email}</td>
           <td class="mono">${r.phone}</td>
           <td>${r.matchId || '—'}</td>
-          <td>${r.paymentId ? '<span class="badge badge-verified">Paid</span>' : '<span class="badge badge-soon">Free</span>'}</td>
+          <td>${paymentBadge[r.paymentStatus] || paymentBadge.none}${r.paymentStatus === 'pending' ? `<br><button type="button" class="btn btn-primary btn-sm" style="margin-top:4px;" onclick="confirmRegPayment('${r.id}')">Confirm</button>` : ''}</td>
+          <td class="mono" style="font-size:11px;">${r.payerUpiId || '—'}</td>
           <td class="mono" style="font-size:11px;">${new Date(r.createdAt).toLocaleString('en-IN')}</td>
         </tr>
       `).join('');
     }catch(e){
       alert('Could not load registrations.');
+    }
+  }
+
+  async function confirmRegPayment(id){
+    const key = getKey();
+    try{
+      const res = await fetch(API_BASE + `/api/admin/registrations/${id}/confirm-payment`, { method:'POST', headers:{'x-admin-key': key} });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not confirm.');
+      showDashboard();
+    }catch(e){ alert(e.message); }
+  }
+
+  async function loadPaymentSettings(){
+    try{
+      const res = await fetch(API_BASE + '/api/payment-settings');
+      const s = await res.json();
+      document.getElementById('payUpiId').value = s.upiId || '';
+      document.getElementById('payName').value = s.payeeName || '';
+    }catch(e){}
+  }
+
+  async function savePaymentSettings(){
+    const key = getKey();
+    const msg = document.getElementById('paymentSettingsMsg');
+    msg.className = 'form-msg'; msg.textContent = '';
+    try{
+      const res = await fetch(API_BASE + '/api/admin/payment-settings', {
+        method:'POST',
+        headers:{'Content-Type':'application/json', 'x-admin-key': key},
+        body: JSON.stringify({
+          upiId: document.getElementById('payUpiId').value.trim(),
+          payeeName: document.getElementById('payName').value.trim(),
+        })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not save.');
+      msg.textContent = 'Saved.';
+      msg.className = 'form-msg ok';
+    }catch(e){
+      msg.textContent = e.message;
+      msg.className = 'form-msg err';
     }
   }
 
