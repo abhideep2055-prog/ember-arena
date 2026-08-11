@@ -1,7 +1,7 @@
 const API_BASE = window.location.origin.startsWith('file') ? '' : '';
 
 const FALLBACK = {
-  stats: { playersRegistered: 0, prizePool: 0, matchesToday: 0 },
+  stats: { playersRegistered: 0, totalUsers: 0, prizePool: 0, matchesToday: 0 },
   leaderboard: [],
   schedule: [],
   news: [],
@@ -73,6 +73,7 @@ function injectAuthModal(){
           <div class="form-row"><label for="loginEmail">Email</label><input type="email" id="loginEmail" required></div>
           <div class="form-row"><label for="loginPassword">Password</label><input type="password" id="loginPassword" required></div>
           <button type="submit" class="btn btn-primary" style="width:100%;">Log in</button>
+          <button type="button" onclick="switchAuthTab('forgot')" style="background:none; border:none; color:var(--ash); font-size:12px; margin-top:10px; cursor:pointer; text-decoration:underline;">Forgot password?</button>
           <div class="form-msg" id="loginMsg"></div>
         </form>
         <form id="signupForm" class="auth-form" style="display:none;">
@@ -83,6 +84,22 @@ function injectAuthModal(){
           <button type="submit" class="btn btn-primary" style="width:100%;">Create account</button>
           <div class="form-msg" id="signupMsg"></div>
         </form>
+        <div id="forgotSection" style="display:none;">
+          <p style="color:var(--ash); font-size:13px; margin-bottom:16px;">Enter your account email — we'll send a 6-digit code to reset your password.</p>
+          <form id="forgotForm" class="auth-form">
+            <div class="form-row"><label for="forgotEmail">Email</label><input type="email" id="forgotEmail" required></div>
+            <button type="submit" class="btn btn-primary" style="width:100%;">Send code</button>
+            <button type="button" onclick="switchAuthTab('login')" style="background:none; border:none; color:var(--ash); font-size:12px; margin-top:10px; cursor:pointer; text-decoration:underline;">Back to log in</button>
+            <div class="form-msg" id="forgotMsg"></div>
+          </form>
+          <form id="resetForm" class="auth-form" style="display:none;">
+            <div class="form-row"><label for="resetOtp">6-digit code</label><input type="text" id="resetOtp" maxlength="6" required></div>
+            <div class="form-row"><label for="resetNewPassword">New password</label><input type="password" id="resetNewPassword" required minlength="6"></div>
+            <button type="submit" class="btn btn-primary" style="width:100%;">Reset password</button>
+            <button type="button" onclick="switchAuthTab('login')" style="background:none; border:none; color:var(--ash); font-size:12px; margin-top:10px; cursor:pointer; text-decoration:underline;">Back to log in</button>
+            <div class="form-msg" id="resetMsg"></div>
+          </form>
+        </div>
       </div>
     </div>
   `;
@@ -151,6 +168,65 @@ function injectAuthModal(){
       btn.disabled = false;
     }
   });
+
+  document.getElementById('forgotForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const msg = document.getElementById('forgotMsg');
+    const btn = this.querySelector('button[type="submit"]');
+    msg.className = 'form-msg'; msg.textContent = '';
+    if(btn.disabled) return;
+    btn.disabled = true;
+    try{
+      const email = document.getElementById('forgotEmail').value.trim();
+      const res = await fetch(API_BASE + '/api/auth/forgot-password', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not send code.');
+      document.getElementById('resetOtp').dataset.email = email;
+      msg.textContent = data.message || 'Code sent — check your email.';
+      msg.className = 'form-msg ok';
+      document.getElementById('forgotForm').style.display = 'none';
+      document.getElementById('resetForm').style.display = 'flex';
+    }catch(err){
+      msg.textContent = err.message;
+      msg.className = 'form-msg err';
+    }finally{
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('resetForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const msg = document.getElementById('resetMsg');
+    const btn = this.querySelector('button[type="submit"]');
+    msg.className = 'form-msg'; msg.textContent = '';
+    if(btn.disabled) return;
+    btn.disabled = true;
+    try{
+      const email = document.getElementById('resetOtp').dataset.email || document.getElementById('forgotEmail').value.trim();
+      const res = await fetch(API_BASE + '/api/auth/reset-password', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          email,
+          otp: document.getElementById('resetOtp').value.trim(),
+          newPassword: document.getElementById('resetNewPassword').value
+        })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not reset password.');
+      msg.textContent = 'Password updated! You can log in now.';
+      msg.className = 'form-msg ok';
+      this.reset();
+      setTimeout(()=> switchAuthTab('login'), 1500);
+    }catch(err){
+      msg.textContent = err.message;
+      msg.className = 'form-msg err';
+    }finally{
+      btn.disabled = false;
+    }
+  });
 }
 
 function openAuthModal(tab){
@@ -164,10 +240,17 @@ function closeAuthModal(){
 }
 function switchAuthTab(tab){
   const isLogin = tab === 'login';
+  const isSignup = tab === 'signup';
+  const isForgot = tab === 'forgot';
   document.getElementById('loginForm').style.display = isLogin ? 'flex' : 'none';
-  document.getElementById('signupForm').style.display = isLogin ? 'none' : 'flex';
+  document.getElementById('signupForm').style.display = isSignup ? 'flex' : 'none';
+  document.getElementById('forgotSection').style.display = isForgot ? 'block' : 'none';
   document.getElementById('tabLogin').classList.toggle('active', isLogin);
-  document.getElementById('tabSignup').classList.toggle('active', !isLogin);
+  document.getElementById('tabSignup').classList.toggle('active', isSignup);
+  if(isForgot){
+    document.getElementById('forgotForm').style.display = 'flex';
+    document.getElementById('resetForm').style.display = 'none';
+  }
 }
 function logout(){
   clearSession();
@@ -183,6 +266,7 @@ function refreshAuthUI(){
   const authNotice = document.getElementById('authNotice');
   const notifyBtn = document.getElementById('notifyBtn');
   const walletBtn = document.getElementById('walletBtn');
+  const hostBtn = document.getElementById('hostBtn');
   if(player){
     if(greeting){ greeting.style.display = 'inline'; greeting.textContent = 'Hi, ' + player.ign; }
     if(logoutBtn) logoutBtn.style.display = 'inline-block';
@@ -191,6 +275,7 @@ function refreshAuthUI(){
     if(authNotice) authNotice.style.display = 'none';
     if(notifyBtn) notifyBtn.style.display = 'inline-block';
     if(walletBtn) walletBtn.style.display = 'inline-block';
+    if(hostBtn) hostBtn.style.display = 'inline-block';
   } else {
     if(greeting) greeting.style.display = 'none';
     if(logoutBtn) logoutBtn.style.display = 'none';
@@ -198,6 +283,7 @@ function refreshAuthUI(){
     if(signupBtn) signupBtn.style.display = 'inline-block';
     if(notifyBtn) notifyBtn.style.display = 'none';
     if(walletBtn) walletBtn.style.display = 'none';
+    if(hostBtn) hostBtn.style.display = 'none';
     if(authNotice){
       authNotice.style.display = 'block';
       authNotice.className = 'form-msg err';
@@ -232,6 +318,9 @@ function injectChatbot(){
         </div>
         <div class="chatbot-body" id="chatbotBody"></div>
         <div class="chatbot-chips" id="chatbotChips"></div>
+        <div id="chatbotCallBar" style="display:none; padding:0 14px 10px;">
+          <a id="chatbotCallLink" href="#" class="btn btn-primary" style="width:100%; text-align:center; display:block; text-decoration:none; padding:10px;">📞 Call Support</a>
+        </div>
         <form class="chatbot-input-row" id="chatbotForm">
           <input type="text" id="chatbotInput" placeholder="Type your question..." autocomplete="off">
           <button type="submit" class="btn btn-primary" style="padding:10px 16px;">Send</button>
@@ -249,6 +338,7 @@ function injectChatbot(){
       addBotMessage("Hi! I'm the Ember Arena help bot. Ask me about registration, payments, room IDs, or rules — or tap a topic below.");
       renderChatbotChips();
     }
+    if(!open) loadChatbotCallBar();
   });
   document.getElementById('chatbotClose').addEventListener('click', ()=>{
     document.getElementById('chatbotPanel').style.display = 'none';
@@ -262,6 +352,30 @@ function injectChatbot(){
     input.value = '';
     answerChatbot(text);
   });
+}
+
+async function loadChatbotCallBar(){
+  const bar = document.getElementById('chatbotCallBar');
+  const link = document.getElementById('chatbotCallLink');
+  if(!bar || bar.dataset.loaded) return;
+  try{
+    const res = await fetch(API_BASE + '/api/support-phone');
+    const data = await res.json();
+    if(data.phone){
+      link.href = 'tel:' + data.phone.replace(/\s+/g, '');
+      bar.style.display = 'block';
+      bar.dataset.loaded = '1';
+    }
+  }catch(e){}
+}
+
+function highlightChatbotCallBar(){
+  const bar = document.getElementById('chatbotCallBar');
+  if(bar && bar.style.display !== 'none'){
+    bar.classList.remove('chatbot-call-highlight');
+    void bar.offsetWidth; // restart animation
+    bar.classList.add('chatbot-call-highlight');
+  }
 }
 
 function addUserMessage(text){
@@ -308,9 +422,10 @@ function answerChatbot(text){
     const wa = (window._socialLinks && window._socialLinks.whatsapp) || '';
     addBotMessage(
       wa
-        ? "I couldn't find an exact answer. Try the WhatsApp link in the footer to chat with the team directly."
-        : "I couldn't find an exact answer for that. Check the Rules page, or look for a contact link in the footer once the team adds one."
+        ? "I couldn't find an exact answer. Try the WhatsApp link in the footer, or tap Call Support below to talk to the team directly."
+        : "I couldn't find an exact answer for that. Tap Call Support below, or check the Rules page."
     );
+    highlightChatbotCallBar();
   }
 }
 
@@ -533,9 +648,11 @@ async function initTicker(){
 
 async function initStats(){
   const stats = await apiGet('/api/stats', 'stats');
+  const usersEl = document.getElementById('statUsers');
   const playersEl = document.getElementById('statPlayers');
   const poolEl = document.getElementById('statPool');
   const matchesEl = document.getElementById('statMatches');
+  if(usersEl) usersEl.textContent = (stats.totalUsers || 0).toLocaleString('en-IN');
   if(playersEl) playersEl.textContent = stats.playersRegistered.toLocaleString('en-IN');
   if(poolEl) poolEl.textContent = '₹' + stats.prizePool.toLocaleString('en-IN');
   if(matchesEl) matchesEl.textContent = stats.matchesToday;
@@ -883,6 +1000,176 @@ function closeUpiModal(){
 function copyUpiId(){
   const text = document.getElementById('upiIdText').textContent;
   navigator.clipboard?.writeText(text).catch(()=>{});
+}
+
+// ---- Host a tournament ----
+
+function injectHostModal(){
+  if(document.getElementById('hostModal')) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div id="hostModal" class="auth-overlay">
+      <div class="auth-modal" style="max-width:420px;">
+        <button class="auth-close" onclick="closeHostModal()" aria-label="Close">&times;</button>
+        <h3 style="font-size:18px; margin-bottom:4px;">🏆 Host a tournament</h3>
+        <p style="color:var(--ash); font-size:12px; margin-bottom:16px;">Hosting fee: ₹50 (any bonus balance is applied first). Once your tournament is approved and completed, you'll get ₹100 credited to your wallet.</p>
+        <form id="hostForm" class="auth-form">
+          <div class="form-row"><label for="hName">Tournament name</label><input type="text" id="hName" placeholder="Friday Night Solo" required></div>
+          <div class="form-2col">
+            <div class="form-row"><label for="hMode">Mode</label>
+              <select id="hMode"><option>Solo</option><option>Duo</option><option>Squad</option></select>
+            </div>
+            <div class="form-row"><label for="hMap">Map</label><input type="text" id="hMap" placeholder="Bermuda"></div>
+          </div>
+          <div class="form-row"><label for="hStartAt">Start date & time</label><input type="datetime-local" id="hStartAt" required></div>
+          <div class="form-row"><label for="hPrize">Prize you'll give the winner (₹)</label><input type="number" id="hPrize" min="0" required></div>
+          <button type="submit" class="btn btn-primary" style="width:100%;">Submit for approval</button>
+          <div class="form-msg" id="hostMsg"></div>
+        </form>
+      </div>
+    </div>
+    <div id="hUpiModal" class="auth-overlay">
+      <div class="auth-modal" style="max-width:380px; text-align:center;">
+        <button class="auth-close" onclick="closeHUpiModal()" aria-label="Close">&times;</button>
+        <h3 style="font-size:18px; margin-bottom:4px;">Pay hosting fee</h3>
+        <div id="hUpiAmountLine" style="color:var(--ash); font-size:13px; margin-bottom:16px;"></div>
+        <img id="hUpiQrImg" src="" alt="UPI QR code" style="width:200px; height:200px; border-radius:8px; background:#fff; padding:8px; margin:0 auto 16px;">
+        <div style="display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:20px;">
+          <span class="mono" id="hUpiIdText" style="font-size:14px; color:var(--gold);"></span>
+        </div>
+        <form id="hUpiConfirmForm" style="text-align:left;">
+          <div class="form-row"><label for="hUpiPayerField">Your UPI ID (the one you paid from)</label><input type="text" id="hUpiPayerField" placeholder="yourname@upi" required></div>
+          <button type="submit" class="btn btn-primary" style="width:100%;">I've paid — submit tournament</button>
+        </form>
+        <div class="form-msg" id="hUpiModalMsg"></div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+  document.getElementById('hostModal').addEventListener('click', function(e){ if(e.target===this) closeHostModal(); });
+  document.getElementById('hUpiModal').addEventListener('click', function(e){ if(e.target===this) closeHUpiModal(); });
+
+  document.getElementById('hostForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const msg = document.getElementById('hostMsg');
+    const btn = this.querySelector('button[type="submit"]');
+    msg.className = 'form-msg'; msg.textContent = '';
+    if(btn.disabled) return;
+    btn.disabled = true;
+    try{
+      const now = new Date(document.getElementById('hStartAt').value);
+      const isToday = now.toDateString() === new Date().toDateString();
+      const dayLabel = isToday ? 'TODAY' : now.toLocaleDateString('en-IN', {weekday:'short'}).toUpperCase();
+      const timeLabel = now.toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit', hour12:false});
+      const payload = {
+        name: document.getElementById('hName').value.trim(),
+        mode: document.getElementById('hMode').value,
+        day: dayLabel,
+        time: timeLabel,
+        startAt: now.toISOString(),
+        map: document.getElementById('hMap').value.trim(),
+        prizeAmount: Number(document.getElementById('hPrize').value),
+      };
+      await createHostedTournament(payload, msg, this);
+    }catch(err){
+      msg.textContent = err.message || 'Could not submit.';
+      msg.className = 'form-msg err';
+    }finally{
+      btn.disabled = false;
+    }
+  });
+}
+
+function openHostModal(){
+  if(!getToken()){ openAuthModal('login'); return; }
+  injectHostModal();
+  document.getElementById('hostModal').style.display = 'flex';
+}
+function closeHostModal(){
+  const m = document.getElementById('hostModal');
+  if(m) m.style.display = 'none';
+}
+function closeHUpiModal(){
+  const m = document.getElementById('hUpiModal');
+  if(m) m.style.display = 'none';
+}
+
+async function createHostedTournament(payload, msg, form){
+  const res = await fetch(API_BASE + '/api/tournaments/create', {
+    method:'POST',
+    headers:{'Content-Type':'application/json', 'Authorization':'Bearer ' + getToken()},
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if(res.status === 402){
+    await payHostFeeAndRetry(payload, msg, form);
+    return;
+  }
+  if(!res.ok) throw new Error(data.error || 'Could not create tournament.');
+  msg.textContent = `Submitted!${data.bonusApplied > 0 ? ` ₹${data.bonusApplied} bonus applied.` : ''} Your tournament is pending admin approval.`;
+  msg.className = 'form-msg ok';
+  form.reset();
+}
+
+async function payHostFeeAndRetry(payload, msg, form){
+  let quote;
+  try{
+    const qres = await fetch(API_BASE + '/api/tournaments/host-fee-quote', {
+      method:'POST', headers:{'Authorization':'Bearer ' + getToken()}
+    });
+    quote = await qres.json();
+  }catch(e){
+    msg.textContent = 'Could not check the hosting fee.';
+    msg.className = 'form-msg err';
+    return;
+  }
+  let settings;
+  try{
+    const sres = await fetch(API_BASE + '/api/payment-settings');
+    settings = await sres.json();
+  }catch(e){ settings = { upiId:'', payeeName:'Ember Arena' }; }
+  if(!settings.upiId){
+    msg.textContent = 'Payment is not set up yet. Please contact the team.';
+    msg.className = 'form-msg err';
+    return;
+  }
+  const upiUri = `upi://pay?pa=${encodeURIComponent(settings.upiId)}&pn=${encodeURIComponent(settings.payeeName)}&am=${quote.remaining}&cu=INR&tn=${encodeURIComponent('Hosting fee - ' + payload.name)}`;
+  document.getElementById('hUpiQrImg').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUri)}`;
+  document.getElementById('hUpiIdText').textContent = settings.upiId;
+  document.getElementById('hUpiAmountLine').textContent =
+    quote.bonusApplied > 0 ? `Pay ₹${quote.remaining} (₹${quote.bonusApplied} bonus applied)` : `Pay ₹${quote.remaining} hosting fee`;
+  document.getElementById('hUpiModalMsg').textContent = '';
+  document.getElementById('hUpiModalMsg').className = 'form-msg';
+  document.getElementById('hUpiModal').style.display = 'flex';
+
+  const confirmForm = document.getElementById('hUpiConfirmForm');
+  confirmForm.onsubmit = async function(e){
+    e.preventDefault();
+    const upiMsg = document.getElementById('hUpiModalMsg');
+    const btn = confirmForm.querySelector('button[type="submit"]');
+    upiMsg.className = 'form-msg'; upiMsg.textContent = '';
+    if(btn.disabled) return;
+    btn.disabled = true;
+    try{
+      const payerUpiId = document.getElementById('hUpiPayerField').value.trim();
+      const res = await fetch(API_BASE + '/api/tournaments/create', {
+        method:'POST',
+        headers:{'Content-Type':'application/json', 'Authorization':'Bearer ' + getToken()},
+        body: JSON.stringify({ ...payload, payerUpiId })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not create tournament.');
+      closeHUpiModal();
+      msg.textContent = 'Submitted! Your tournament is pending admin approval.';
+      msg.className = 'form-msg ok';
+      form.reset();
+    }catch(err){
+      upiMsg.textContent = err.message;
+      upiMsg.className = 'form-msg err';
+    }finally{
+      btn.disabled = false;
+    }
+  };
 }
 
 function initRegForm(){

@@ -16,6 +16,7 @@ const regStore = require('./registrations');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const playerStore = require('./players');
+const mailer = require('./mailer');
 const walletStore = require('./wallet');
 const pushStore = require('./push');
 const contentStore = require('./content');
@@ -75,10 +76,17 @@ const BASE_PRIZE_POOL = 1250000;
 app.get('/api/stats', async (req, res) => {
   const total = await regStore.countRegistrations();
   const schedule = await contentStore.getContent('schedule', []);
+  let totalUsers = 0;
+  try {
+    totalUsers = await playerStore.countPlayers();
+  } catch (e) {
+    if (e.message !== 'NO_DB') console.error('countPlayers error:', e);
+  }
   res.json({
     playersRegistered: BASE_PLAYER_COUNT + total,
+    totalUsers,
     prizePool: BASE_PRIZE_POOL,
-    matchesToday: schedule.filter(m => m.day === 'TODAY').length,
+    matchesToday: schedule.filter(m => m.day === 'TODAY' && m.approvalStatus !== 'pending').length,
   });
 });
 
@@ -86,7 +94,8 @@ app.get('/api/leaderboard', async (req, res) => {
   res.json(await contentStore.getContent('leaderboard', []));
 });
 app.get('/api/schedule', async (req, res) => {
-  res.json(await contentStore.getContent('schedule', []));
+  const schedule = await contentStore.getContent('schedule', []);
+  res.json(schedule.filter(m => m.approvalStatus !== 'pending'));
 });
 app.get('/api/news', async (req, res) => {
   res.json(await contentStore.getContent('news', []));
@@ -166,6 +175,68 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ player: { id: req.player.sub, ign: req.player.ign, email: req.player.email, phone: req.player.phone } });
+});
+
+// ---- Password reset (email OTP) ----
+
+const GENERIC_RESET_MSG = 'If an account exists with that email, a code has been sent to it.';
+
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { email } = req.body || {};
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required.' });
+  }
+  if (!mailer.mailEnabled) {
+    return res.status(503).json({ error: 'Email is not configured on this server yet. Contact the team directly to reset your password.' });
+  }
+  try {
+    const player = await playerStore.findByEmail(String(email).trim());
+    if (player) {
+      const otp = String(Math.floor(100000 + Math.random() * 900000));
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+      await playerStore.createPasswordReset(player.email, otp, expiresAt);
+      try {
+        await mailer.sendOtpEmail(player.email, otp);
+      } catch (mailErr) {
+        console.error('OTP email send failed:', mailErr.message);
+        return res.status(500).json({ error: 'Could not send the reset email. Try again in a moment.' });
+      }
+    }
+    // Same message whether or not the account exists, so no one can probe for registered emails.
+    res.json({ success: true, message: GENERIC_RESET_MSG });
+  } catch (e) {
+    if (e.message === 'NO_DB') {
+      return res.status(503).json({ error: 'Player accounts need a database connected.' });
+    }
+    console.error('Forgot-password error:', e);
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
+  }
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { email, otp, newPassword } = req.body || {};
+  if (!email || !otp || !newPassword) {
+    return res.status(400).json({ error: 'Email, code, and new password are required.' });
+  }
+  if (String(newPassword).length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+  }
+  try {
+    const validReset = await playerStore.findValidReset(String(email).trim(), String(otp).trim());
+    if (!validReset) {
+      return res.status(400).json({ error: 'That code is invalid or has expired. Request a new one.' });
+    }
+    const passwordHash = await bcrypt.hash(String(newPassword), 10);
+    await playerStore.updatePassword(String(email).trim(), passwordHash);
+    await playerStore.deleteResetsForEmail(String(email).trim());
+    res.json({ success: true });
+  } catch (e) {
+    if (e.message === 'NO_DB') {
+      return res.status(503).json({ error: 'Player accounts need a database connected.' });
+    }
+    console.error('Reset-password error:', e);
+    res.status(500).json({ error: 'Could not reset your password. Please try again.' });
+  }
 });
 
 // ---- Wallet (players) ----
@@ -312,6 +383,131 @@ app.post('/api/register', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('Registration error:', e);
     res.status(500).json({ error: 'Something went wrong saving your registration. Please try again.' });
+  }
+});
+
+// ---- Player-hosted tournaments ----
+
+const HOST_FEE = 50;
+const HOST_REWARD = 100;
+
+app.post('/api/tournaments/host-fee-quote', requireAuth, async (req, res) => {
+  let bonusApplied = 0;
+  try {
+    const wallet = await walletStore.getWallet(req.player.sub);
+    if (wallet) bonusApplied = Math.min(wallet.bonusBalance, HOST_FEE);
+  } catch (e) {
+    if (e.message !== 'NO_DB') console.error('Bonus lookup error:', e);
+  }
+  const remaining = Math.round((HOST_FEE - bonusApplied) * 100) / 100;
+  res.json({ hostFee: HOST_FEE, bonusApplied, remaining });
+});
+
+app.post('/api/tournaments/create', requireAuth, async (req, res) => {
+  const { name, mode, day, time, startAt, map, sub, prizeAmount, payerUpiId } = req.body || {};
+  if (!name || !mode || !day || !time || !startAt) {
+    return res.status(400).json({ error: 'Name, mode, day, time, and start date/time are required.' });
+  }
+  try {
+    let bonusApplied = 0;
+    const wallet = await walletStore.getWallet(req.player.sub);
+    if (wallet) bonusApplied = Math.min(wallet.bonusBalance, HOST_FEE);
+    const remaining = Math.round((HOST_FEE - bonusApplied) * 100) / 100;
+
+    if (remaining > 0 && !payerUpiId) {
+      return res.status(402).json({ error: 'Hosting fee payment is required.' });
+    }
+
+    const match = {
+      id: 'h' + Date.now(),
+      day: String(day).toUpperCase(),
+      time: String(time),
+      startAt,
+      name: String(name).slice(0, 60),
+      sub: sub ? String(sub).slice(0, 60) : `${mode} · Hosted by ${req.player.ign}`,
+      map: map ? String(map).slice(0, 40) : '',
+      entryFee: 0,
+      status: 'open',
+      hostedBy: req.player.sub,
+      hostIgn: req.player.ign,
+      hostEmail: req.player.email,
+      prizeAmount: Number(prizeAmount) || 0,
+      approvalStatus: 'pending',
+      hostFeeBonusApplied: bonusApplied,
+      hostFeeStatus: remaining > 0 ? 'pending' : 'confirmed',
+      payerUpiId: payerUpiId ? String(payerUpiId).trim().slice(0, 60) : null,
+      rewardPaid: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    const schedule = await contentStore.getContent('schedule', []);
+    schedule.push(match);
+    await contentStore.setContent('schedule', schedule);
+
+    if (bonusApplied > 0) {
+      try {
+        await walletStore.adjustBonus(req.player.sub, -bonusApplied, 'hosting_fee', `Hosting fee for ${match.name}`);
+      } catch (e) {
+        console.error('Bonus deduction failed for hosted tournament:', e.message);
+      }
+    }
+
+    res.json({ success: true, match, bonusApplied });
+  } catch (e) {
+    if (e.message === 'NO_DB') {
+      return res.status(503).json({ error: 'Hosting a tournament needs a database connected.' });
+    }
+    console.error('Host tournament creation error:', e);
+    res.status(500).json({ error: 'Could not create your tournament. Please try again.' });
+  }
+});
+
+app.get('/api/admin/hosted-tournaments', async (req, res) => {
+  const schedule = await contentStore.getContent('schedule', []);
+  res.json(schedule.filter(m => m.hostedBy));
+});
+
+app.post('/api/admin/hosted-tournaments/:id/approve', async (req, res) => {
+  const schedule = await contentStore.getContent('schedule', []);
+  const match = schedule.find(m => m.id === req.params.id);
+  if (!match) return res.status(404).json({ error: 'Tournament not found.' });
+  match.approvalStatus = 'approved';
+  match.hostFeeStatus = 'confirmed';
+  await contentStore.setContent('schedule', schedule);
+  res.json({ success: true });
+});
+
+app.post('/api/admin/hosted-tournaments/:id/reject', async (req, res) => {
+  const schedule = await contentStore.getContent('schedule', []);
+  const idx = schedule.findIndex(m => m.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Tournament not found.' });
+  const match = schedule[idx];
+  schedule.splice(idx, 1);
+  await contentStore.setContent('schedule', schedule);
+  if (match.hostFeeBonusApplied > 0) {
+    try {
+      await walletStore.adjustBonus(match.hostedBy, match.hostFeeBonusApplied, 'hosting_fee_refund', `Refund — tournament "${match.name}" rejected`);
+    } catch (e) {
+      console.error('Bonus refund failed:', e.message);
+    }
+  }
+  res.json({ success: true });
+});
+
+app.post('/api/admin/hosted-tournaments/:id/pay-reward', async (req, res) => {
+  const schedule = await contentStore.getContent('schedule', []);
+  const match = schedule.find(m => m.id === req.params.id);
+  if (!match) return res.status(404).json({ error: 'Tournament not found.' });
+  if (match.approvalStatus !== 'approved') return res.status(400).json({ error: 'Approve the tournament before paying the organizer reward.' });
+  if (match.rewardPaid) return res.status(400).json({ error: 'Reward already paid for this tournament.' });
+  try {
+    await walletStore.adjustWallet(match.hostedBy, HOST_REWARD, 'host_reward', `Organizer reward for "${match.name}"`);
+    match.rewardPaid = true;
+    await contentStore.setContent('schedule', schedule);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Host reward payment error:', e);
+    res.status(500).json({ error: 'Could not pay the organizer reward.' });
   }
 });
 
@@ -562,6 +758,18 @@ app.post('/api/admin/social-links', async (req, res) => {
     clean[key] = body[key] ? String(body[key]).slice(0, 300) : '';
   }
   await contentStore.setContent('socialLinks', clean);
+  res.json({ success: true });
+});
+
+// ---- Support phone (call button) ----
+
+app.get('/api/support-phone', async (req, res) => {
+  res.json(await contentStore.getContent('supportPhone', { phone: '' }));
+});
+
+app.post('/api/admin/support-phone', async (req, res) => {
+  const { phone } = req.body || {};
+  await contentStore.setContent('supportPhone', { phone: phone ? String(phone).trim().slice(0, 20) : '' });
   res.json({ success: true });
 });
 

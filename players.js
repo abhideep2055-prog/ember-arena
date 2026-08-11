@@ -25,4 +25,51 @@ async function findById(id) {
   return res.rows[0] || null;
 }
 
-module.exports = { createPlayer, findByEmail, findById };
+async function updatePassword(email, passwordHash) {
+  if (!pool) throw new Error('NO_DB');
+  const res = await pool.query(`UPDATE players SET password_hash = $1 WHERE email = $2 RETURNING id`, [passwordHash, email]);
+  if (res.rowCount === 0) throw new Error('Player not found.');
+}
+
+// ---- Password reset OTPs ----
+
+async function createPasswordReset(email, otp, expiresAt) {
+  if (!pool) throw new Error('NO_DB');
+  // Invalidate any earlier unused OTPs for this email first.
+  await pool.query(`DELETE FROM password_resets WHERE email = $1`, [email]);
+  await pool.query(
+    `INSERT INTO password_resets (email, otp, expires_at) VALUES ($1,$2,$3)`,
+    [email, otp, expiresAt]
+  );
+}
+
+async function findValidReset(email, otp) {
+  if (!pool) throw new Error('NO_DB');
+  const res = await pool.query(
+    `SELECT * FROM password_resets WHERE email = $1 AND otp = $2 AND expires_at > now()`,
+    [email, otp]
+  );
+  return res.rows[0] || null;
+}
+
+async function deleteResetsForEmail(email) {
+  if (!pool) throw new Error('NO_DB');
+  await pool.query(`DELETE FROM password_resets WHERE email = $1`, [email]);
+}
+
+async function countPlayers() {
+  if (!pool) throw new Error('NO_DB');
+  const res = await pool.query(`SELECT COUNT(*)::int AS count FROM players`);
+  return res.rows[0].count;
+}
+
+module.exports = {
+  createPlayer,
+  findByEmail,
+  findById,
+  updatePassword,
+  createPasswordReset,
+  findValidReset,
+  deleteResetsForEmail,
+  countPlayers,
+};

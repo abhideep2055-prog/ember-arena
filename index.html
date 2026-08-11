@@ -27,6 +27,7 @@
     </div>
     <div class="navcta">
       <span class="user-greeting" id="userGreeting" style="display:none;"></span>
+      <button class="btn btn-ghost" id="hostBtn" style="display:none;" onclick="openHostModal()">🏆 Host</button>
       <button class="btn btn-ghost" id="walletBtn" style="display:none;" onclick="openWalletModal()">💰 Wallet</button>
       <button class="btn btn-ghost" id="installBtn" onclick="installApp()">📲 Install App</button>
       <button class="btn btn-ghost" id="notifyBtn" style="display:none;" onclick="enableMatchAlerts()">🔔 Match alerts</button>
@@ -49,7 +50,8 @@
       <a href="#schedule" class="btn btn-ghost">View schedule</a>
     </div>
     <div class="stat-row">
-      <div><div class="num mono" id="statPlayers">18,420</div><div class="lbl">Players registered</div></div>
+      <div><div class="num mono" id="statUsers">0</div><div class="lbl">Players signed up</div></div>
+      <div><div class="num mono" id="statPlayers">18,420</div><div class="lbl">Tournament entries</div></div>
       <div><div class="num mono" id="statPool">₹12,50,000</div><div class="lbl">Prize pool live</div></div>
       <div><div class="num mono" id="statMatches">2</div><div class="lbl">Matches today</div></div>
     </div>

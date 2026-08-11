@@ -70,6 +70,14 @@
   </div>
 
   <div class="reg-card" style="margin-bottom:24px;">
+    <h3 style="font-size:15px; margin-bottom:4px;">📞 Support phone number</h3>
+    <p style="color:var(--ash); font-size:12px; margin-bottom:16px;">Shown as a "Call Support" button inside the help chatbot. Leave blank to hide it.</p>
+    <div class="form-row"><label for="supportPhone">Phone number</label><input type="text" id="supportPhone" placeholder="+919999999999"></div>
+    <button type="button" class="btn btn-primary" onclick="saveSupportPhone()">Save phone number</button>
+    <div class="form-msg" id="supportPhoneMsg"></div>
+  </div>
+
+  <div class="reg-card" style="margin-bottom:24px;">
     <h3 style="font-size:15px; margin-bottom:4px;">💳 Payment settings (manual UPI)</h3>
     <p style="color:var(--ash); font-size:12px; margin-bottom:16px;">When a player registers for a paid tournament, they'll see your UPI ID and a QR code to pay. They submit their own UPI ID as proof, and you confirm the payment manually in the Registrations tab.</p>
     <div class="form-2col">
@@ -87,6 +95,7 @@
     <button class="admin-tab" id="tabPrizes" onclick="switchAdminTab('prizes')">Prize Pool</button>
     <button class="admin-tab" id="tabNews" onclick="switchAdminTab('news')">News</button>
     <button class="admin-tab" id="tabWallet" onclick="switchAdminTab('wallet')">Wallet</button>
+    <button class="admin-tab" id="tabHosted" onclick="switchAdminTab('hosted')">Hosted</button>
   </div>
 
   <div class="admin-panel active" id="panelRegs">
@@ -232,6 +241,14 @@
       <tbody id="withdrawalBody"></tbody>
     </table>
   </div>
+
+  <div class="admin-panel" id="panelHosted">
+    <p style="color:var(--ash); font-size:12px; margin-bottom:16px;">Tournaments created by players. Approve to make them go live on the schedule, or reject to remove and refund their hosting fee. Pay the ₹100 organizer reward only after you've confirmed the match actually happened.</p>
+    <table class="admin-table">
+      <thead><tr><th>Tournament</th><th>Host</th><th>Prize</th><th>Fee status</th><th>Approval</th><th>Reward</th><th></th></tr></thead>
+      <tbody id="hostedBody"></tbody>
+    </table>
+  </div>
 </div>
 
 <script>
@@ -246,17 +263,20 @@
     document.getElementById('panelPrizes').classList.toggle('active', tab === 'prizes');
     document.getElementById('panelNews').classList.toggle('active', tab === 'news');
     document.getElementById('panelWallet').classList.toggle('active', tab === 'wallet');
+    document.getElementById('panelHosted').classList.toggle('active', tab === 'hosted');
     document.getElementById('tabRegs').classList.toggle('active', tab === 'regs');
     document.getElementById('tabMatches').classList.toggle('active', tab === 'matches');
     document.getElementById('tabLeaderboard').classList.toggle('active', tab === 'leaderboard');
     document.getElementById('tabPrizes').classList.toggle('active', tab === 'prizes');
     document.getElementById('tabNews').classList.toggle('active', tab === 'news');
     document.getElementById('tabWallet').classList.toggle('active', tab === 'wallet');
+    document.getElementById('tabHosted').classList.toggle('active', tab === 'hosted');
     if(tab === 'matches') loadSchedule();
     if(tab === 'leaderboard') loadLeaderboard();
     if(tab === 'prizes') loadPrizePool();
     if(tab === 'news') loadNewsAdmin();
     if(tab === 'wallet'){ loadWithdrawals(); loadPlayers(); }
+    if(tab === 'hosted') loadHostedTournaments();
   }
 
   async function doLogin(){
@@ -295,6 +315,7 @@
       loadMaintenanceStatus();
       loadSocialLinks();
       loadPaymentSettings();
+      loadSupportPhone();
       document.getElementById('countLabel').textContent = `${data.length} total registration${data.length===1?'':'s'}`;
       const paymentBadge = {
         none: '<span class="badge badge-soon">Free</span>',
@@ -336,6 +357,34 @@
       document.getElementById('payUpiId').value = s.upiId || '';
       document.getElementById('payName').value = s.payeeName || '';
     }catch(e){}
+  }
+
+  async function loadSupportPhone(){
+    try{
+      const res = await fetch(API_BASE + '/api/support-phone');
+      const s = await res.json();
+      document.getElementById('supportPhone').value = s.phone || '';
+    }catch(e){}
+  }
+
+  async function saveSupportPhone(){
+    const key = getKey();
+    const msg = document.getElementById('supportPhoneMsg');
+    msg.className = 'form-msg'; msg.textContent = '';
+    try{
+      const res = await fetch(API_BASE + '/api/admin/support-phone', {
+        method:'POST',
+        headers:{'Content-Type':'application/json', 'x-admin-key': key},
+        body: JSON.stringify({ phone: document.getElementById('supportPhone').value.trim() })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not save.');
+      msg.textContent = 'Saved.';
+      msg.className = 'form-msg ok';
+    }catch(e){
+      msg.textContent = e.message;
+      msg.className = 'form-msg err';
+    }
   }
 
   async function savePaymentSettings(){
@@ -829,6 +878,81 @@
     document.getElementById('creditEmail').value = email;
     document.getElementById('creditAmount').focus();
     document.getElementById('creditForm').scrollIntoView({behavior:'smooth'});
+  }
+
+  // ---- Hosted tournaments ----
+
+  async function loadHostedTournaments(){
+    const key = getKey();
+    try{
+      const res = await fetch(API_BASE + '/api/admin/hosted-tournaments', { headers:{'x-admin-key': key} });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not load.');
+      const approvalBadge = {
+        pending: '<span class="badge badge-open">Pending</span>',
+        approved: '<span class="badge badge-verified">Approved</span>',
+      };
+      const feeBadge = {
+        pending: '<span class="badge badge-open">Fee pending</span>',
+        confirmed: '<span class="badge badge-verified">Fee confirmed</span>',
+      };
+      document.getElementById('hostedBody').innerHTML = data.length === 0
+        ? `<tr><td colspan="7" style="color:var(--ash); text-align:center; padding:24px;">No player-hosted tournaments yet.</td></tr>`
+        : data.map(m => `
+            <tr>
+              <td>${m.name}<br><span style="color:var(--ash); font-size:11px;">${m.day} ${m.time} · ${m.mode || ''}</span></td>
+              <td>${m.hostIgn}<br><span style="color:var(--ash); font-size:11px;">${m.hostEmail}</span></td>
+              <td class="mono">₹${m.prizeAmount || 0}</td>
+              <td>${feeBadge[m.hostFeeStatus] || m.hostFeeStatus}${m.payerUpiId ? `<br><span style="font-size:10px; color:var(--ash);">${m.payerUpiId}</span>` : ''}</td>
+              <td>${approvalBadge[m.approvalStatus] || m.approvalStatus}</td>
+              <td>${m.rewardPaid ? '<span class="badge badge-verified">Paid</span>' : '<span class="badge badge-soon">Not paid</span>'}</td>
+              <td>
+                ${m.approvalStatus === 'pending' ? `
+                  <button type="button" class="btn btn-primary btn-sm" onclick="approveHosted('${m.id}')">Approve</button>
+                  <button type="button" class="btn btn-ghost btn-sm" onclick="rejectHosted('${m.id}')">Reject</button>
+                ` : ''}
+                ${m.approvalStatus === 'approved' && !m.rewardPaid ? `
+                  <button type="button" class="btn btn-primary btn-sm" onclick="payHostReward('${m.id}')">Pay ₹100 reward</button>
+                ` : ''}
+              </td>
+            </tr>
+          `).join('');
+    }catch(e){
+      alert(e.message);
+    }
+  }
+
+  async function approveHosted(id){
+    if(!confirm('Approve this tournament? It will go live on the public schedule.')) return;
+    const key = getKey();
+    try{
+      const res = await fetch(API_BASE + `/api/admin/hosted-tournaments/${id}/approve`, { method:'POST', headers:{'x-admin-key': key} });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not approve.');
+      loadHostedTournaments();
+    }catch(e){ alert(e.message); }
+  }
+
+  async function rejectHosted(id){
+    if(!confirm('Reject and remove this tournament? Any bonus used for the hosting fee will be refunded.')) return;
+    const key = getKey();
+    try{
+      const res = await fetch(API_BASE + `/api/admin/hosted-tournaments/${id}/reject`, { method:'POST', headers:{'x-admin-key': key} });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not reject.');
+      loadHostedTournaments();
+    }catch(e){ alert(e.message); }
+  }
+
+  async function payHostReward(id){
+    if(!confirm('Confirm the match actually happened before paying the ₹100 organizer reward. Continue?')) return;
+    const key = getKey();
+    try{
+      const res = await fetch(API_BASE + `/api/admin/hosted-tournaments/${id}/pay-reward`, { method:'POST', headers:{'x-admin-key': key} });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not pay reward.');
+      loadHostedTournaments();
+    }catch(e){ alert(e.message); }
   }
 
   document.addEventListener('DOMContentLoaded', showDashboard);
