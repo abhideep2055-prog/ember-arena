@@ -94,11 +94,11 @@ async function listPlayersWithUids() {
   if (!pool) throw new Error('NO_DB');
   const res = await pool.query(`
     SELECT p.id AS "walletId", p.ign, p.email, p.wallet_balance AS "walletBalance",
-           p.bonus_balance AS "bonusBalance",
+           p.bonus_balance AS "bonusBalance", p.blocked,
            COALESCE(array_agg(DISTINCT r.uid) FILTER (WHERE r.uid IS NOT NULL), '{}') AS uids
     FROM players p
     LEFT JOIN registrations r ON r.player_id = p.id
-    GROUP BY p.id, p.ign, p.email, p.wallet_balance, p.bonus_balance
+    GROUP BY p.id, p.ign, p.email, p.wallet_balance, p.bonus_balance, p.blocked
     ORDER BY p.created_at DESC
   `);
   return res.rows;

@@ -51,22 +51,62 @@ function signToken(player) {
   );
 }
 
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   const header = req.headers['authorization'] || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Please log in to continue.' });
+  let decoded;
   try {
-    req.player = jwt.verify(token, JWT_SECRET);
-    next();
+    decoded = jwt.verify(token, JWT_SECRET);
   } catch (e) {
     return res.status(401).json({ error: 'Session expired. Please log in again.' });
   }
+  try {
+    const blocked = await playerStore.isBlocked(decoded.sub);
+    if (blocked) {
+      return res.status(403).json({ error: 'Your account has been blocked. Contact support for help.' });
+    }
+  } catch (e) {
+    // If the blocked-status check itself fails (e.g. no DB), don't lock everyone out —
+    // fail open here since login already gates blocked accounts on the happy path.
+  }
+  req.player = decoded;
+  next();
 }
 
 const app = express();
+// Render (and most hosts) sit behind a reverse proxy. Without this,
+// express-rate-limit can't safely read the real client IP from
+// X-Forwarded-For and throws, which was breaking API requests.
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname));
+
+const rateLimit = require('express-rate-limit');
+
+// General safety net: caps how many requests any single IP can make per
+// minute across the whole API, so one runaway script/bot can't overload
+// the free-tier server for everyone else.
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down and try again in a moment.' },
+});
+app.use('/api/', generalLimiter);
+
+// Tighter limit on auth endpoints specifically — these are the ones worth
+// protecting from brute-force/spam (login guessing, mass signups).
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please try again in a few minutes.' },
+});
+app.use('/api/auth/', authLimiter);
 
 const BASE_PLAYER_COUNT = 18420;
 const BASE_PRIZE_POOL = 1250000;
@@ -161,6 +201,9 @@ app.post('/api/auth/login', async (req, res) => {
     const ok = await bcrypt.compare(String(password), player.password_hash);
     if (!ok) {
       return res.status(401).json({ error: 'Wrong email or password.' });
+    }
+    if (player.blocked) {
+      return res.status(403).json({ error: 'Your account has been blocked. Contact support for help.' });
     }
     const token = signToken({ id: player.id, ign: player.ign, email: player.email, phone: player.phone });
     res.json({ token, player: { id: player.id, ign: player.ign, email: player.email, phone: player.phone } });
@@ -683,6 +726,30 @@ app.get('/api/admin/players', async (req, res) => {
     }
     console.error('Players list error:', e);
     res.status(500).json({ error: 'Could not load players.' });
+  }
+});
+
+app.post('/api/admin/players/block', async (req, res) => {
+  const { email } = req.body || {};
+  if (!email) return res.status(400).json({ error: 'Email is required.' });
+  try {
+    await playerStore.setBlocked(String(email).trim(), true);
+    res.json({ success: true });
+  } catch (e) {
+    if (e.message === 'NO_DB') return res.status(503).json({ error: 'Player accounts need a database connected.' });
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/players/unblock', async (req, res) => {
+  const { email } = req.body || {};
+  if (!email) return res.status(400).json({ error: 'Email is required.' });
+  try {
+    await playerStore.setBlocked(String(email).trim(), false);
+    res.json({ success: true });
+  } catch (e) {
+    if (e.message === 'NO_DB') return res.status(503).json({ error: 'Player accounts need a database connected.' });
+    res.status(400).json({ error: e.message });
   }
 });
 

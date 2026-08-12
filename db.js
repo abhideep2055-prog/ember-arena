@@ -39,6 +39,7 @@ async function initDb() {
     );
   `);
   await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS wallet_balance NUMERIC(10,2) NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT false;`);
   await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS bonus_balance NUMERIC(10,2) NOT NULL DEFAULT 0;`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS password_resets (

@@ -63,6 +63,19 @@ async function countPlayers() {
   return res.rows[0].count;
 }
 
+async function setBlocked(email, blocked) {
+  if (!pool) throw new Error('NO_DB');
+  const res = await pool.query(`UPDATE players SET blocked = $1 WHERE email = $2 RETURNING id`, [blocked, email]);
+  if (res.rowCount === 0) throw new Error('Player not found.');
+}
+
+async function isBlocked(playerId) {
+  if (!pool) throw new Error('NO_DB');
+  const res = await pool.query(`SELECT blocked FROM players WHERE id = $1`, [playerId]);
+  if (res.rowCount === 0) return false;
+  return res.rows[0].blocked;
+}
+
 module.exports = {
   createPlayer,
   findByEmail,
@@ -72,4 +85,6 @@ module.exports = {
   findValidReset,
   deleteResetsForEmail,
   countPlayers,
+  setBlocked,
+  isBlocked,
 };

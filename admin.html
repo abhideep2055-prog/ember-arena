@@ -230,7 +230,7 @@
     <h3 style="font-size:15px; margin-bottom:4px;">Players</h3>
     <p style="color:var(--ash); font-size:12px; margin-bottom:16px;">Find a player by their Free Fire UID from the match, then hit Credit to fill the form above.</p>
     <table class="admin-table">
-      <thead><tr><th>Wallet ID</th><th>IGN</th><th>Free Fire UID(s)</th><th>Email</th><th>Withdrawable</th><th>Bonus</th><th></th></tr></thead>
+      <thead><tr><th>Wallet ID</th><th>IGN</th><th>Free Fire UID(s)</th><th>Email</th><th>Withdrawable</th><th>Bonus</th><th>Status</th><th></th></tr></thead>
       <tbody id="playersBody"></tbody>
     </table>
 
@@ -857,7 +857,7 @@
       const data = await res.json();
       if(!res.ok) throw new Error(data.error || 'Could not load players.');
       document.getElementById('playersBody').innerHTML = data.length === 0
-        ? `<tr><td colspan="7" style="color:var(--ash); text-align:center; padding:24px;">No players yet.</td></tr>`
+        ? `<tr><td colspan="8" style="color:var(--ash); text-align:center; padding:24px;">No players yet.</td></tr>`
         : data.map(p => `
             <tr>
               <td class="mono" style="font-size:11px;">${p.walletId}</td>
@@ -866,12 +866,45 @@
               <td style="font-size:12px;">${p.email}</td>
               <td class="mono">₹${p.walletBalance}</td>
               <td class="mono">₹${p.bonusBalance}</td>
-              <td><button type="button" class="btn btn-primary btn-sm" onclick="quickCredit('${p.email.replace(/'/g,"\\'")}')">Credit</button></td>
+              <td>${p.blocked ? '<span class="badge badge-live">Blocked</span>' : '<span class="badge badge-verified">Active</span>'}</td>
+              <td>
+                <button type="button" class="btn btn-primary btn-sm" onclick="quickCredit('${p.email.replace(/'/g,"\\'")}')">Credit</button>
+                ${p.blocked
+                  ? `<button type="button" class="btn btn-ghost btn-sm" onclick="unblockPlayer('${p.email.replace(/'/g,"\\'")}')">Unblock</button>`
+                  : `<button type="button" class="btn btn-ghost btn-sm" onclick="blockPlayer('${p.email.replace(/'/g,"\\'")}')">Block</button>`}
+              </td>
             </tr>
           `).join('');
     }catch(e){
       alert(e.message);
     }
+  }
+
+  async function blockPlayer(email){
+    if(!confirm(`Block ${email}? They won't be able to log in or use their account until unblocked.`)) return;
+    const key = getKey();
+    try{
+      const res = await fetch(API_BASE + '/api/admin/players/block', {
+        method:'POST', headers:{'Content-Type':'application/json', 'x-admin-key': key},
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not block player.');
+      loadPlayers();
+    }catch(e){ alert(e.message); }
+  }
+
+  async function unblockPlayer(email){
+    const key = getKey();
+    try{
+      const res = await fetch(API_BASE + '/api/admin/players/unblock', {
+        method:'POST', headers:{'Content-Type':'application/json', 'x-admin-key': key},
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not unblock player.');
+      loadPlayers();
+    }catch(e){ alert(e.message); }
   }
 
   function quickCredit(email){
