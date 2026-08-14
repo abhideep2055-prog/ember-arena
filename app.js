@@ -578,12 +578,51 @@ async function installApp(){
     if(btn) btn.style.display = 'none';
     return;
   }
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  if(isIOS){
-    alert('iPhone/iPad par install karne ke liye: neeche Share button (⬆️) dabayein, phir "Add to Home Screen" chunein.');
-  } else {
-    alert('Is browser mein abhi install available nahi hai. Chrome ya Edge try karein, ya browser ke menu (⋮) mein "Install app" / "Add to Home screen" dhoondhein.');
-  }
+  openInstallGuide();
+}
+
+function injectInstallGuide(){
+  if(document.getElementById('installGuideModal')) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div id="installGuideModal" class="auth-overlay">
+      <div class="auth-modal" style="max-width:420px;">
+        <button class="auth-close" onclick="closeInstallGuide()" aria-label="Close">&times;</button>
+        <h3 style="font-size:18px; margin-bottom:4px;">📲 Install Ember Arena</h3>
+        <p style="color:var(--ash); font-size:12px; margin-bottom:20px;">This is optional — the site works fully in your browser without installing. Installing just adds an app icon to your home screen.</p>
+        <div style="margin-bottom:20px;">
+          <div class="tag" style="margin-bottom:8px;">// ANDROID (CHROME)</div>
+          <ol style="color:var(--ash); font-size:13px; line-height:1.8; padding-left:18px;">
+            <li>Tap the <b style="color:var(--white);">⋮ menu</b> (top right of your browser)</li>
+            <li>Tap <b style="color:var(--white);">"Install app"</b> or <b style="color:var(--white);">"Add to Home screen"</b></li>
+            <li>Confirm — the icon appears on your home screen</li>
+          </ol>
+        </div>
+        <div style="margin-bottom:8px;">
+          <div class="tag" style="margin-bottom:8px;">// IPHONE (SAFARI)</div>
+          <ol style="color:var(--ash); font-size:13px; line-height:1.8; padding-left:18px;">
+            <li>Tap the <b style="color:var(--white);">Share button</b> (square with an arrow, bottom bar)</li>
+            <li>Scroll down, tap <b style="color:var(--white);">"Add to Home Screen"</b></li>
+            <li>Tap <b style="color:var(--white);">Add</b> in the top corner</li>
+          </ol>
+        </div>
+        <p style="color:var(--ash); font-size:11px; margin-top:12px;">Using a different browser (like your phone's built-in one) and don't see this option? Open the site in Chrome or Safari instead — those support it reliably.</p>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+  document.getElementById('installGuideModal').addEventListener('click', function(e){
+    if(e.target === this) closeInstallGuide();
+  });
+}
+
+function openInstallGuide(){
+  injectInstallGuide();
+  document.getElementById('installGuideModal').style.display = 'flex';
+}
+function closeInstallGuide(){
+  const m = document.getElementById('installGuideModal');
+  if(m) m.style.display = 'none';
 }
 
 function urlBase64ToUint8Array(base64String){
@@ -697,15 +736,21 @@ async function initSchedule(){
         soon: '<span class="badge badge-soon">Opens soon</span>'
       };
       list.innerHTML = `<div class="match-row head"><div>Time</div><div>Match</div><div>Map</div><div>Entry</div><div>Status</div></div>` +
-        schedule.map(m => `
+        schedule.map(m => {
+          const hasHostedPrizes = m.hostedBy && (m.prize1 > 0 || m.prize2 > 0 || m.prize3 > 0);
+          const prizeLine = hasHostedPrizes
+            ? `<span class="sub" style="color:var(--gold);">🏆 ₹${m.prize1||0} / ₹${m.prize2||0} / ₹${m.prize3||0}</span>`
+            : '';
+          return `
           <div class="match-row">
             <div class="match-date">${m.day}<br>${m.time}</div>
-            <div class="match-name">${m.name}<span class="sub">${m.sub}</span></div>
+            <div class="match-name">${m.name}<span class="sub">${m.sub}</span>${prizeLine}</div>
             <div>${m.map}</div>
             <div class="mono">${entryLabel(m.entryFee)}</div>
             <div>${badgeMap[m.status] || badgeMap.soon}</div>
           </div>
-        `).join('');
+        `;
+        }).join('');
     }
   }
   const select = document.getElementById('tournament');
@@ -1022,7 +1067,12 @@ function injectHostModal(){
             <div class="form-row"><label for="hMap">Map</label><input type="text" id="hMap" placeholder="Bermuda"></div>
           </div>
           <div class="form-row"><label for="hStartAt">Start date & time</label><input type="datetime-local" id="hStartAt" required></div>
-          <div class="form-row"><label for="hPrize">Prize you'll give the winner (₹)</label><input type="number" id="hPrize" min="0" required></div>
+          <div class="form-row"><label>Prizes you'll give the winners (₹)</label></div>
+          <div class="form-2col">
+            <div class="form-row"><label for="hPrize1">1st place</label><input type="number" id="hPrize1" min="0" required></div>
+            <div class="form-row"><label for="hPrize2">2nd place</label><input type="number" id="hPrize2" min="0" value="0"></div>
+          </div>
+          <div class="form-row"><label for="hPrize3">3rd place</label><input type="number" id="hPrize3" min="0" value="0"></div>
           <button type="submit" class="btn btn-primary" style="width:100%;">Submit for approval</button>
           <div class="form-msg" id="hostMsg"></div>
         </form>
@@ -1068,7 +1118,9 @@ function injectHostModal(){
         time: timeLabel,
         startAt: now.toISOString(),
         map: document.getElementById('hMap').value.trim(),
-        prizeAmount: Number(document.getElementById('hPrize').value),
+        prize1: Number(document.getElementById('hPrize1').value) || 0,
+        prize2: Number(document.getElementById('hPrize2').value) || 0,
+        prize3: Number(document.getElementById('hPrize3').value) || 0,
       };
       await createHostedTournament(payload, msg, this);
     }catch(err){

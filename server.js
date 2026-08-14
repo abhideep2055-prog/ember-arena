@@ -447,7 +447,7 @@ app.post('/api/tournaments/host-fee-quote', requireAuth, async (req, res) => {
 });
 
 app.post('/api/tournaments/create', requireAuth, async (req, res) => {
-  const { name, mode, day, time, startAt, map, sub, prizeAmount, payerUpiId } = req.body || {};
+  const { name, mode, day, time, startAt, map, sub, prize1, prize2, prize3, payerUpiId } = req.body || {};
   if (!name || !mode || !day || !time || !startAt) {
     return res.status(400).json({ error: 'Name, mode, day, time, and start date/time are required.' });
   }
@@ -474,7 +474,9 @@ app.post('/api/tournaments/create', requireAuth, async (req, res) => {
       hostedBy: req.player.sub,
       hostIgn: req.player.ign,
       hostEmail: req.player.email,
-      prizeAmount: Number(prizeAmount) || 0,
+      prize1: Number(prize1) || 0,
+      prize2: Number(prize2) || 0,
+      prize3: Number(prize3) || 0,
       approvalStatus: 'pending',
       hostFeeBonusApplied: bonusApplied,
       hostFeeStatus: remaining > 0 ? 'pending' : 'confirmed',
