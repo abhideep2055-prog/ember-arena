@@ -1,5 +1,18 @@
 const API_BASE = window.location.origin.startsWith('file') ? '' : '';
 
+// Escapes user-controlled text before it's inserted via innerHTML, so a
+// player putting HTML/script in their name, UID, tournament title, etc.
+// can't run code in another visitor's (or the admin's) browser.
+function escapeHtml(str){
+  if(str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 const FALLBACK = {
   stats: { playersRegistered: 0, totalUsers: 0, prizePool: 0, matchesToday: 0 },
   leaderboard: [],
@@ -709,7 +722,7 @@ async function initLeaderboard(){
     const rankClass = i===0?'r1':i===1?'r2':i===2?'r3':'';
     return `<tr>
       <td><span class="rank ${rankClass}">#${i+1}</span></td>
-      <td><div class="squad"><div class="squad-icon">${r.tag}</div>${r.squad}</div></td>
+      <td><div class="squad"><div class="squad-icon">${escapeHtml(r.tag)}</div>${escapeHtml(r.squad)}</div></td>
       <td class="mono">${r.matches}</td>
       <td class="mono">${r.booyahs}</td>
       <td class="mono">${r.kills}</td>
@@ -744,8 +757,8 @@ async function initSchedule(){
           return `
           <div class="match-row">
             <div class="match-date">${m.day}<br>${m.time}</div>
-            <div class="match-name">${m.name}<span class="sub">${m.sub}</span>${prizeLine}</div>
-            <div>${m.map}</div>
+            <div class="match-name">${escapeHtml(m.name)}<span class="sub">${escapeHtml(m.sub)}</span>${prizeLine}</div>
+            <div>${escapeHtml(m.map)}</div>
             <div class="mono">${entryLabel(m.entryFee)}</div>
             <div>${badgeMap[m.status] || badgeMap.soon}</div>
           </div>
@@ -758,7 +771,7 @@ async function initSchedule(){
     select.innerHTML = schedule.length === 0
       ? `<option value="">No tournaments available yet</option>`
       : schedule.map(m =>
-          `<option value="${m.id}">${m.day} ${m.time} — ${m.name} (${entryLabel(m.entryFee)})</option>`
+          `<option value="${m.id}">${escapeHtml(m.day)} ${escapeHtml(m.time)} — ${escapeHtml(m.name)} (${entryLabel(m.entryFee)})</option>`
         ).join('');
   }
 }
@@ -773,10 +786,10 @@ async function initNews(){
   }
   grid.innerHTML = news.map(n => `
     <div class="news-card">
-      <span class="badge badge-open news-cat">${n.cat}</span>
-      <div class="news-date">${n.date}</div>
-      <h3>${n.title}</h3>
-      <p>${n.body}</p>
+      <span class="badge badge-open news-cat">${escapeHtml(n.cat)}</span>
+      <div class="news-date">${escapeHtml(n.date)}</div>
+      <h3>${escapeHtml(n.title)}</h3>
+      <p>${escapeHtml(n.body)}</p>
     </div>
   `).join('');
 }

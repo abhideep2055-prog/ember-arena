@@ -254,6 +254,19 @@
 <script>
   const API_BASE = '';
 
+  // Escapes player-controlled text (names, emails, UPI IDs, tournament
+  // titles, etc.) before rendering it via innerHTML, so a malicious value
+  // typed by a player can't run script in the admin's browser session.
+  function escapeHtml(str){
+    if(str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function getKey(){ return sessionStorage.getItem('ember_admin_key'); }
 
   function switchAdminTab(tab){
@@ -324,14 +337,14 @@
       };
       document.getElementById('regBody').innerHTML = data.map(r => `
         <tr>
-          <td>${r.ign}</td>
-          <td class="mono">${r.uid}</td>
-          <td>${r.mode}</td>
-          <td>${r.email}</td>
-          <td class="mono">${r.phone}</td>
-          <td>${r.matchId || '—'}</td>
-          <td>${paymentBadge[r.paymentStatus] || paymentBadge.none}${r.paymentStatus === 'pending' ? `<br><button type="button" class="btn btn-primary btn-sm" style="margin-top:4px;" onclick="confirmRegPayment('${r.id}')">Confirm</button>` : ''}</td>
-          <td class="mono" style="font-size:11px;">${r.payerUpiId || '—'}</td>
+          <td>${escapeHtml(r.ign)}</td>
+          <td class="mono">${escapeHtml(r.uid)}</td>
+          <td>${escapeHtml(r.mode)}</td>
+          <td>${escapeHtml(r.email)}</td>
+          <td class="mono">${escapeHtml(r.phone)}</td>
+          <td>${escapeHtml(r.matchId) || '—'}</td>
+          <td>${paymentBadge[r.paymentStatus] || paymentBadge.none}${r.paymentStatus === 'pending' ? `<br><button type="button" class="btn btn-primary btn-sm" style="margin-top:4px;" onclick="confirmRegPayment('${escapeHtml(r.id)}')">Confirm</button>` : ''}</td>
+          <td class="mono" style="font-size:11px;">${escapeHtml(r.payerUpiId) || '—'}</td>
           <td class="mono" style="font-size:11px;">${new Date(r.createdAt).toLocaleString('en-IN')}</td>
         </tr>
       `).join('');
@@ -429,11 +442,11 @@
   function renderMatches(){
     document.getElementById('matchBody').innerHTML = scheduleCache.map((m, i) => `
       <tr>
-        <td class="mono">${m.day} ${m.time}${m.startAt ? '<br><span style="color:var(--ash); font-size:10px;">alerts: ' + new Date(m.startAt).toLocaleString('en-IN') + '</span>' : ''}</td>
-        <td>${m.name}<br><span style="color:var(--ash); font-size:11px;">${m.sub || ''}</span></td>
-        <td>${m.map || ''}</td>
+        <td class="mono">${escapeHtml(m.day)} ${escapeHtml(m.time)}${m.startAt ? '<br><span style="color:var(--ash); font-size:10px;">alerts: ' + escapeHtml(new Date(m.startAt).toLocaleString('en-IN')) + '</span>' : ''}</td>
+        <td>${escapeHtml(m.name)}<br><span style="color:var(--ash); font-size:11px;">${escapeHtml(m.sub) || ''}</span></td>
+        <td>${escapeHtml(m.map) || ''}</td>
         <td class="mono">${entryLabel(m.entryFee)}</td>
-        <td>${m.status}</td>
+        <td>${escapeHtml(m.status)}</td>
         <td><button type="button" class="btn btn-ghost btn-sm" onclick="deleteMatch(${i})">Delete</button></td>
       </tr>
     `).join('');
@@ -513,12 +526,12 @@
     document.getElementById('squadBody').innerHTML = sorted.map((s, i) => `
       <tr>
         <td class="mono">#${i + 1}</td>
-        <td>${s.squad} <span style="color:var(--ash); font-size:11px;">(${s.tag})</span></td>
+        <td>${escapeHtml(s.squad)} <span style="color:var(--ash); font-size:11px;">(${escapeHtml(s.tag)})</span></td>
         <td class="mono">${s.matches}</td>
         <td class="mono">${s.booyahs}</td>
         <td class="mono">${s.kills}</td>
         <td class="mono">${s.pts}</td>
-        <td><button type="button" class="btn btn-ghost btn-sm" onclick="deleteSquad('${s.squad.replace(/'/g, "\\'")}')">Delete</button></td>
+        <td><button type="button" class="btn btn-ghost btn-sm" onclick='deleteSquad(${escapeHtml(JSON.stringify(s.squad))})'>Delete</button></td>
       </tr>
     `).join('');
   }
@@ -672,14 +685,14 @@
         ? `<tr><td colspan="6" style="color:var(--ash); text-align:center; padding:24px;">No withdrawal requests yet.</td></tr>`
         : data.map(w => `
             <tr>
-              <td>${w.ign}<br><span style="color:var(--ash); font-size:11px;">${w.email}</span></td>
+              <td>${escapeHtml(w.ign)}<br><span style="color:var(--ash); font-size:11px;">${escapeHtml(w.email)}</span></td>
               <td class="mono">₹${w.amount}</td>
-              <td class="mono">${w.upiId || '—'}</td>
-              <td>${statusBadge[w.status] || w.status}</td>
+              <td class="mono">${escapeHtml(w.upiId) || '—'}</td>
+              <td>${statusBadge[w.status] || escapeHtml(w.status)}</td>
               <td class="mono" style="font-size:11px;">${new Date(w.createdAt).toLocaleString('en-IN')}</td>
               <td>${w.status === 'pending' ? `
-                <button type="button" class="btn btn-primary btn-sm" onclick="payWithdrawal(${w.id})">Mark paid</button>
-                <button type="button" class="btn btn-ghost btn-sm" onclick="rejectWithdrawalReq(${w.id})">Reject</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="payWithdrawal(${Number(w.id)})">Mark paid</button>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="rejectWithdrawalReq(${Number(w.id)})">Reject</button>
               ` : ''}</td>
             </tr>
           `).join('');
@@ -794,9 +807,9 @@
       ? `<tr><td colspan="4" style="color:var(--ash); text-align:center; padding:24px;">No news items yet.</td></tr>`
       : newsCache.map((n, i) => `
           <tr>
-            <td class="mono">${n.date}</td>
-            <td>${n.cat}</td>
-            <td>${n.title}</td>
+            <td class="mono">${escapeHtml(n.date)}</td>
+            <td>${escapeHtml(n.cat)}</td>
+            <td>${escapeHtml(n.title)}</td>
             <td><button type="button" class="btn btn-ghost btn-sm" onclick="deleteNews(${i})">Delete</button></td>
           </tr>
         `).join('');
@@ -860,18 +873,18 @@
         ? `<tr><td colspan="8" style="color:var(--ash); text-align:center; padding:24px;">No players yet.</td></tr>`
         : data.map(p => `
             <tr>
-              <td class="mono" style="font-size:11px;">${p.walletId}</td>
-              <td>${p.ign}</td>
-              <td class="mono">${(p.uids || []).join(', ') || '—'}</td>
-              <td style="font-size:12px;">${p.email}</td>
+              <td class="mono" style="font-size:11px;">${escapeHtml(p.walletId)}</td>
+              <td>${escapeHtml(p.ign)}</td>
+              <td class="mono">${escapeHtml((p.uids || []).join(', ')) || '—'}</td>
+              <td style="font-size:12px;">${escapeHtml(p.email)}</td>
               <td class="mono">₹${p.walletBalance}</td>
               <td class="mono">₹${p.bonusBalance}</td>
               <td>${p.blocked ? '<span class="badge badge-live">Blocked</span>' : '<span class="badge badge-verified">Active</span>'}</td>
               <td>
-                <button type="button" class="btn btn-primary btn-sm" onclick="quickCredit('${p.email.replace(/'/g,"\\'")}')">Credit</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick='quickCredit(${escapeHtml(JSON.stringify(p.email))})'>Credit</button>
                 ${p.blocked
-                  ? `<button type="button" class="btn btn-ghost btn-sm" onclick="unblockPlayer('${p.email.replace(/'/g,"\\'")}')">Unblock</button>`
-                  : `<button type="button" class="btn btn-ghost btn-sm" onclick="blockPlayer('${p.email.replace(/'/g,"\\'")}')">Block</button>`}
+                  ? `<button type="button" class="btn btn-ghost btn-sm" onclick='unblockPlayer(${escapeHtml(JSON.stringify(p.email))})'>Unblock</button>`
+                  : `<button type="button" class="btn btn-ghost btn-sm" onclick='blockPlayer(${escapeHtml(JSON.stringify(p.email))})'>Block</button>`}
               </td>
             </tr>
           `).join('');
@@ -933,19 +946,19 @@
         ? `<tr><td colspan="7" style="color:var(--ash); text-align:center; padding:24px;">No player-hosted tournaments yet.</td></tr>`
         : data.map(m => `
             <tr>
-              <td>${m.name}<br><span style="color:var(--ash); font-size:11px;">${m.day} ${m.time} · ${m.mode || ''}</span></td>
-              <td>${m.hostIgn}<br><span style="color:var(--ash); font-size:11px;">${m.hostEmail}</span></td>
+              <td>${escapeHtml(m.name)}<br><span style="color:var(--ash); font-size:11px;">${escapeHtml(m.day)} ${escapeHtml(m.time)} · ${escapeHtml(m.mode) || ''}</span></td>
+              <td>${escapeHtml(m.hostIgn)}<br><span style="color:var(--ash); font-size:11px;">${escapeHtml(m.hostEmail)}</span></td>
               <td class="mono">₹${m.prize1 || 0} / ₹${m.prize2 || 0} / ₹${m.prize3 || 0}</td>
-              <td>${feeBadge[m.hostFeeStatus] || m.hostFeeStatus}${m.payerUpiId ? `<br><span style="font-size:10px; color:var(--ash);">${m.payerUpiId}</span>` : ''}</td>
-              <td>${approvalBadge[m.approvalStatus] || m.approvalStatus}</td>
+              <td>${feeBadge[m.hostFeeStatus] || escapeHtml(m.hostFeeStatus)}${m.payerUpiId ? `<br><span style="font-size:10px; color:var(--ash);">${escapeHtml(m.payerUpiId)}</span>` : ''}</td>
+              <td>${approvalBadge[m.approvalStatus] || escapeHtml(m.approvalStatus)}</td>
               <td>${m.rewardPaid ? '<span class="badge badge-verified">Paid</span>' : '<span class="badge badge-soon">Not paid</span>'}</td>
               <td>
                 ${m.approvalStatus === 'pending' ? `
-                  <button type="button" class="btn btn-primary btn-sm" onclick="approveHosted('${m.id}')">Approve</button>
-                  <button type="button" class="btn btn-ghost btn-sm" onclick="rejectHosted('${m.id}')">Reject</button>
+                  <button type="button" class="btn btn-primary btn-sm" onclick='approveHosted(${escapeHtml(JSON.stringify(m.id))})'>Approve</button>
+                  <button type="button" class="btn btn-ghost btn-sm" onclick='rejectHosted(${escapeHtml(JSON.stringify(m.id))})'>Reject</button>
                 ` : ''}
                 ${m.approvalStatus === 'approved' && !m.rewardPaid ? `
-                  <button type="button" class="btn btn-primary btn-sm" onclick="payHostReward('${m.id}')">Pay ₹100 reward</button>
+                  <button type="button" class="btn btn-primary btn-sm" onclick='payHostReward(${escapeHtml(JSON.stringify(m.id))})'>Pay ₹100 reward</button>
                 ` : ''}
               </td>
             </tr>
