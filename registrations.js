@@ -86,6 +86,19 @@ async function playerIdsForMatch(matchId) {
   }
 }
 
+async function findByPlayer(playerId) {
+  if (pool) {
+    const res = await pool.query(
+      `SELECT id, ign, uid, mode, match_id AS "matchId", payment_status AS "paymentStatus", created_at AS "createdAt"
+       FROM registrations WHERE player_id = $1 ORDER BY created_at DESC`,
+      [playerId]
+    );
+    return res.rows;
+  } else {
+    return readJsonRegs().filter(r => r.playerId === playerId).slice().reverse();
+  }
+}
+
 async function confirmPayment(registrationId) {
   if (pool) {
     const res = await pool.query(
@@ -108,5 +121,6 @@ module.exports = {
   countRegistrations,
   allRegistrations,
   playerIdsForMatch,
+  findByPlayer,
   confirmPayment,
 };

@@ -109,13 +109,13 @@ const authLimiter = rateLimit({
 app.use('/api/auth/', authLimiter);
 
 const BASE_PLAYER_COUNT = 18420;
-const BASE_PRIZE_POOL = 1250000;
 
 // ---- Public API ----
 
 app.get('/api/stats', async (req, res) => {
   const total = await regStore.countRegistrations();
   const schedule = await contentStore.getContent('schedule', []);
+  const prizePool = await contentStore.getContent('prizePool', PRIZE_POOL_DEFAULT);
   let totalUsers = 0;
   try {
     totalUsers = await playerStore.countPlayers();
@@ -125,7 +125,7 @@ app.get('/api/stats', async (req, res) => {
   res.json({
     playersRegistered: BASE_PLAYER_COUNT + total,
     totalUsers,
-    prizePool: BASE_PRIZE_POOL,
+    prizePool: prizePool.total || 0,
     matchesToday: schedule.filter(m => m.day === 'TODAY' && m.approvalStatus !== 'pending').length,
   });
 });
@@ -361,6 +361,28 @@ app.post('/api/push/unsubscribe', requireAuth, async (req, res) => {
 
 // ---- Registration (requires a logged-in player) ----
 
+app.get('/api/my-registrations', requireAuth, async (req, res) => {
+  try {
+    const regs = await regStore.findByPlayer(req.player.sub);
+    const schedule = await contentStore.getContent('schedule', []);
+    const withMatchInfo = regs.map(r => {
+      const match = schedule.find(m => m.id === r.matchId);
+      return {
+        ...r,
+        matchName: match ? match.name : null,
+        matchDay: match ? match.day : null,
+        matchTime: match ? match.time : null,
+        roomId: match ? match.roomId || '' : '',
+        roomPassword: match ? match.roomPassword || '' : '',
+      };
+    });
+    res.json(withMatchInfo);
+  } catch (e) {
+    console.error('my-registrations error:', e);
+    res.status(500).json({ error: 'Could not load your registrations.' });
+  }
+});
+
 app.post('/api/register', requireAuth, async (req, res) => {
   const { uid, mode, matchId, paymentId, payerUpiId } = req.body || {};
   if (!uid) {
@@ -447,7 +469,7 @@ app.post('/api/tournaments/host-fee-quote', requireAuth, async (req, res) => {
 });
 
 app.post('/api/tournaments/create', requireAuth, async (req, res) => {
-  const { name, mode, day, time, startAt, map, sub, prize1, prize2, prize3, payerUpiId } = req.body || {};
+  const { name, mode, day, time, startAt, map, sub, prize1, prize2, prize3, entryFee, payerUpiId } = req.body || {};
   if (!name || !mode || !day || !time || !startAt) {
     return res.status(400).json({ error: 'Name, mode, day, time, and start date/time are required.' });
   }
@@ -469,7 +491,7 @@ app.post('/api/tournaments/create', requireAuth, async (req, res) => {
       name: String(name).slice(0, 60),
       sub: sub ? String(sub).slice(0, 60) : `${mode} · Hosted by ${req.player.ign}`,
       map: map ? String(map).slice(0, 40) : '',
-      entryFee: 0,
+      entryFee: Math.max(0, Number(entryFee) || 0),
       status: 'open',
       hostedBy: req.player.sub,
       hostIgn: req.player.ign,
@@ -767,6 +789,17 @@ app.post('/api/admin/schedule', async (req, res) => {
   res.json({ success: true });
 });
 
+app.post('/api/admin/schedule/:id/room', async (req, res) => {
+  const { roomId, roomPassword } = req.body || {};
+  const schedule = await contentStore.getContent('schedule', []);
+  const match = schedule.find(m => m.id === req.params.id);
+  if (!match) return res.status(404).json({ error: 'Tournament not found.' });
+  match.roomId = roomId ? String(roomId).trim().slice(0, 40) : '';
+  match.roomPassword = roomPassword ? String(roomPassword).trim().slice(0, 40) : '';
+  await contentStore.setContent('schedule', schedule);
+  res.json({ success: true });
+});
+
 app.post('/api/admin/news', async (req, res) => {
   if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Expected an array of news items.' });
   await contentStore.setContent('news', req.body);
@@ -886,9 +919,12 @@ async function checkUpcomingMatchesAndNotify() {
           continue;
         }
         const subs = await pushStore.getSubscriptionsForPlayers(playerIds);
+        const roomInfo = match.roomId
+          ? ` Room ID: ${match.roomId}${match.roomPassword ? ', Password: ' + match.roomPassword : ''}.`
+          : ' Room ID is coming shortly.';
         const payload = JSON.stringify({
           title: 'Match starting soon!',
-          body: `${match.name} starts in 10 minutes. Room ID is coming by SMS.`,
+          body: `${match.name} starts in 10 minutes.${roomInfo}`,
           url: '/index.html#schedule',
         });
         for (const sub of subs) {

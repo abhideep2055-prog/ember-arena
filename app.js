@@ -280,6 +280,7 @@ function refreshAuthUI(){
   const notifyBtn = document.getElementById('notifyBtn');
   const walletBtn = document.getElementById('walletBtn');
   const hostBtn = document.getElementById('hostBtn');
+  const myMatchesBtn = document.getElementById('myMatchesBtn');
   if(player){
     if(greeting){ greeting.style.display = 'inline'; greeting.textContent = 'Hi, ' + player.ign; }
     if(logoutBtn) logoutBtn.style.display = 'inline-block';
@@ -289,6 +290,7 @@ function refreshAuthUI(){
     if(notifyBtn) notifyBtn.style.display = 'inline-block';
     if(walletBtn) walletBtn.style.display = 'inline-block';
     if(hostBtn) hostBtn.style.display = 'inline-block';
+    if(myMatchesBtn) myMatchesBtn.style.display = 'inline-block';
   } else {
     if(greeting) greeting.style.display = 'none';
     if(logoutBtn) logoutBtn.style.display = 'none';
@@ -297,6 +299,7 @@ function refreshAuthUI(){
     if(notifyBtn) notifyBtn.style.display = 'none';
     if(walletBtn) walletBtn.style.display = 'none';
     if(hostBtn) hostBtn.style.display = 'none';
+    if(myMatchesBtn) myMatchesBtn.style.display = 'none';
     if(authNotice){
       authNotice.style.display = 'block';
       authNotice.className = 'form-msg err';
@@ -310,7 +313,7 @@ function refreshAuthUI(){
 const CHATBOT_FAQ = [
   { keywords:['register','registration','sign up','join','enter'], q:'How do I register for a tournament?', a:'Log in or sign up first, then go to the Register section, pick a tournament from the dropdown, enter your Free Fire UID and mode, and hit Confirm registration.' },
   { keywords:['uid','free fire uid','id number'], q:'What is Free Fire UID?', a:'It\'s the unique ID number shown on your Free Fire in-game profile page — tap your avatar in-game to find it.' },
-  { keywords:['room id','password','room','when will i get','sms'], q:'When do I get the Room ID?', a:'Room ID and password are sent by SMS 10 minutes before your match starts. Make sure your phone number is correct when you sign up.' },
+  { keywords:['room id','password','room','when will i get','sms'], q:'When do I get the Room ID?', a:'Room ID and password unlock in your "My Matches" list 10 minutes before your match — turn on Match Alerts for a push notification too.' },
   { keywords:['pay','payment','entry fee','razorpay','upi','money'], q:'How does payment work?', a:'Free tournaments need no payment. Paid ones open a secure Razorpay checkout automatically when you register — pay there and you\'re confirmed instantly.' },
   { keywords:['prize','payout','winning','cash','when do i get paid'], q:'When do I get prize money?', a:'Winning squads are paid out within 24 hours of the final match, straight to the details you registered with. See the Prize Pool section for amounts.' },
   { keywords:['emulator','hack','cheat','ban','fair play'], q:'What counts as cheating?', a:'Emulators, hacks, and teaming with other squads are not allowed and lead to disqualification or a ban. Full details are on the Rules page.' },
@@ -869,7 +872,7 @@ async function submitRegistration(payload, msg, form){
   const pendingNote = data.entry && data.entry.paymentStatus === 'pending'
     ? ' Your slot is held pending payment confirmation by the team.'
     : '';
-  msg.textContent = `You're in${player ? ', ' + player.ign : ''}.${bonusNote}${pendingNote} Room ID and password will be sent by SMS 10 minutes before your match.`;
+  msg.textContent = `You're in${player ? ', ' + player.ign : ''}.${bonusNote}${pendingNote} Room ID unlocks in "My Matches" (and via push alert, if enabled) 10 minutes before your match.`;
   msg.className = 'form-msg ok';
   if(data.totalPlayers){
     const playersEl = document.getElementById('statPlayers');
@@ -1060,6 +1063,63 @@ function copyUpiId(){
   navigator.clipboard?.writeText(text).catch(()=>{});
 }
 
+// ---- My Matches (room ID / password) ----
+
+function injectMyMatchesModal(){
+  if(document.getElementById('myMatchesModal')) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div id="myMatchesModal" class="auth-overlay">
+      <div class="auth-modal" style="max-width:440px;">
+        <button class="auth-close" onclick="closeMyMatches()" aria-label="Close">&times;</button>
+        <h3 style="font-size:18px; margin-bottom:4px;">🎮 My Matches</h3>
+        <p style="color:var(--ash); font-size:12px; margin-bottom:16px;">Room ID and password appear here once the admin sets them, usually 10 minutes before your match.</p>
+        <div id="myMatchesList" style="display:flex; flex-direction:column; gap:12px; max-height:400px; overflow-y:auto;"></div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+  document.getElementById('myMatchesModal').addEventListener('click', function(e){
+    if(e.target === this) closeMyMatches();
+  });
+}
+
+async function openMyMatches(){
+  if(!getToken()){ openAuthModal('login'); return; }
+  injectMyMatchesModal();
+  document.getElementById('myMatchesModal').style.display = 'flex';
+  const list = document.getElementById('myMatchesList');
+  list.innerHTML = `<div style="color:var(--ash); font-size:13px;">Loading...</div>`;
+  try{
+    const res = await fetch(API_BASE + '/api/my-registrations', { headers:{ 'Authorization': 'Bearer ' + getToken() } });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || 'Could not load your matches.');
+    if(data.length === 0){
+      list.innerHTML = `<div style="color:var(--ash); font-size:13px;">You haven't registered for any tournaments yet.</div>`;
+      return;
+    }
+    list.innerHTML = data.map(r => `
+      <div style="background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:14px;">
+        <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${escapeHtml(r.matchName) || 'Tournament'}</div>
+        <div style="color:var(--ash); font-size:11px; margin-bottom:10px;">${escapeHtml(r.matchDay) || ''} ${escapeHtml(r.matchTime) || ''} · UID ${escapeHtml(r.uid)} · ${escapeHtml(r.mode)}</div>
+        ${r.roomId ? `
+          <div style="display:flex; gap:16px; font-size:13px;">
+            <div><span style="color:var(--ash);">Room ID:</span> <span class="mono gold">${escapeHtml(r.roomId)}</span></div>
+            ${r.roomPassword ? `<div><span style="color:var(--ash);">Password:</span> <span class="mono gold">${escapeHtml(r.roomPassword)}</span></div>` : ''}
+          </div>
+        ` : `<div style="color:var(--ash); font-size:12px;">Room ID not out yet — check back closer to match time.</div>`}
+      </div>
+    `).join('');
+  }catch(err){
+    list.innerHTML = `<div style="color:var(--blood); font-size:13px;">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function closeMyMatches(){
+  const m = document.getElementById('myMatchesModal');
+  if(m) m.style.display = 'none';
+}
+
 // ---- Host a tournament ----
 
 function injectHostModal(){
@@ -1080,6 +1140,8 @@ function injectHostModal(){
             <div class="form-row"><label for="hMap">Map</label><input type="text" id="hMap" placeholder="Bermuda"></div>
           </div>
           <div class="form-row"><label for="hStartAt">Start date & time</label><input type="datetime-local" id="hStartAt" required></div>
+          <div class="form-row"><label for="hEntryFee">Entry fee for players (₹, 0 = free to join)</label><input type="number" id="hEntryFee" min="0" value="0"></div>
+          <p style="color:var(--ash); font-size:11px; margin:-8px 0 12px;">Entry fees are collected through the site's payment system and settled with you by the admin — not paid directly to you.</p>
           <div class="form-row"><label>Prizes you'll give the winners (₹)</label></div>
           <div class="form-2col">
             <div class="form-row"><label for="hPrize1">1st place</label><input type="number" id="hPrize1" min="0" required></div>
@@ -1131,6 +1193,7 @@ function injectHostModal(){
         time: timeLabel,
         startAt: now.toISOString(),
         map: document.getElementById('hMap').value.trim(),
+        entryFee: Number(document.getElementById('hEntryFee').value) || 0,
         prize1: Number(document.getElementById('hPrize1').value) || 0,
         prize2: Number(document.getElementById('hPrize2').value) || 0,
         prize3: Number(document.getElementById('hPrize3').value) || 0,

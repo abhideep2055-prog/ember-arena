@@ -141,7 +141,7 @@
       </form>
     </div>
     <table class="admin-table">
-      <thead><tr><th>Day / Time</th><th>Name</th><th>Map</th><th>Entry</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Day / Time</th><th>Name</th><th>Map</th><th>Entry</th><th>Status</th><th>Room ID / Password</th><th></th></tr></thead>
       <tbody id="matchBody"></tbody>
     </table>
   </div>
@@ -245,7 +245,7 @@
   <div class="admin-panel" id="panelHosted">
     <p style="color:var(--ash); font-size:12px; margin-bottom:16px;">Tournaments created by players. Approve to make them go live on the schedule, or reject to remove and refund their hosting fee. Pay the ₹100 organizer reward only after you've confirmed the match actually happened.</p>
     <table class="admin-table">
-      <thead><tr><th>Tournament</th><th>Host</th><th>Prizes (1st/2nd/3rd)</th><th>Fee status</th><th>Approval</th><th>Reward</th><th></th></tr></thead>
+      <thead><tr><th>Tournament</th><th>Host</th><th>Entry</th><th>Prizes (1st/2nd/3rd)</th><th>Room</th><th>Fee status</th><th>Approval</th><th>Reward</th><th></th></tr></thead>
       <tbody id="hostedBody"></tbody>
     </table>
   </div>
@@ -447,9 +447,29 @@
         <td>${escapeHtml(m.map) || ''}</td>
         <td class="mono">${entryLabel(m.entryFee)}</td>
         <td>${escapeHtml(m.status)}</td>
+        <td class="mono" style="font-size:11px;">${m.roomId ? `${escapeHtml(m.roomId)} / ${escapeHtml(m.roomPassword) || '—'}` : '<span style="color:var(--ash);">Not set</span>'}<br><button type="button" class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="setRoomDetails('${escapeHtml(m.id)}')">Set</button></td>
         <td><button type="button" class="btn btn-ghost btn-sm" onclick="deleteMatch(${i})">Delete</button></td>
       </tr>
     `).join('');
+  }
+
+  async function setRoomDetails(matchId){
+    const roomId = prompt('Room ID:');
+    if(roomId === null) return;
+    const roomPassword = prompt('Room password (optional):') || '';
+    const key = getKey();
+    try{
+      const res = await fetch(API_BASE + `/api/admin/schedule/${matchId}/room`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json', 'x-admin-key': key},
+        body: JSON.stringify({ roomId, roomPassword })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not save.');
+      await loadSchedule();
+    }catch(e){
+      alert(e.message);
+    }
   }
 
   async function saveSchedule(){
@@ -948,7 +968,9 @@
             <tr>
               <td>${escapeHtml(m.name)}<br><span style="color:var(--ash); font-size:11px;">${escapeHtml(m.day)} ${escapeHtml(m.time)} · ${escapeHtml(m.mode) || ''}</span></td>
               <td>${escapeHtml(m.hostIgn)}<br><span style="color:var(--ash); font-size:11px;">${escapeHtml(m.hostEmail)}</span></td>
+              <td class="mono">${m.entryFee > 0 ? '₹' + m.entryFee : 'Free'}</td>
               <td class="mono">₹${m.prize1 || 0} / ₹${m.prize2 || 0} / ₹${m.prize3 || 0}</td>
+              <td class="mono" style="font-size:11px;">${m.roomId ? `${escapeHtml(m.roomId)} / ${escapeHtml(m.roomPassword) || '—'}` : '<span style="color:var(--ash);">Not set</span>'}<br><button type="button" class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="setHostedRoomDetails('${escapeHtml(m.id)}')">Set</button></td>
               <td>${feeBadge[m.hostFeeStatus] || escapeHtml(m.hostFeeStatus)}${m.payerUpiId ? `<br><span style="font-size:10px; color:var(--ash);">${escapeHtml(m.payerUpiId)}</span>` : ''}</td>
               <td>${approvalBadge[m.approvalStatus] || escapeHtml(m.approvalStatus)}</td>
               <td>${m.rewardPaid ? '<span class="badge badge-verified">Paid</span>' : '<span class="badge badge-soon">Not paid</span>'}</td>
@@ -999,6 +1021,25 @@
       if(!res.ok) throw new Error(data.error || 'Could not pay reward.');
       loadHostedTournaments();
     }catch(e){ alert(e.message); }
+  }
+
+  async function setHostedRoomDetails(matchId){
+    const roomId = prompt('Room ID:');
+    if(roomId === null) return;
+    const roomPassword = prompt('Room password (optional):') || '';
+    const key = getKey();
+    try{
+      const res = await fetch(API_BASE + `/api/admin/schedule/${matchId}/room`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json', 'x-admin-key': key},
+        body: JSON.stringify({ roomId, roomPassword })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not save.');
+      loadHostedTournaments();
+    }catch(e){
+      alert(e.message);
+    }
   }
 
   document.addEventListener('DOMContentLoaded', showDashboard);
