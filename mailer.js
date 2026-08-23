@@ -10,8 +10,12 @@ if (!mailEnabled) {
   console.warn('⚠️  Email is not configured — set BREVO_API_KEY and SMTP_EMAIL in .env to enable password reset emails.');
 }
 
-async function sendOtpEmail(toEmail, otp) {
+async function sendOtpEmail(toEmail, otp, purpose = 'reset') {
   if (!mailEnabled) throw new Error('MAIL_NOT_CONFIGURED');
+
+  const isSignup = purpose === 'signup';
+  const subject = isSignup ? 'Verify your email for Ember Arena' : 'Your Ember Arena password reset code';
+  const intro = isSignup ? "Your verification code to finish signing up is:" : 'Your OTP to reset your password is:';
 
   const res = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
@@ -23,11 +27,11 @@ async function sendOtpEmail(toEmail, otp) {
     body: JSON.stringify({
       sender: { name: 'Ember Arena', email: process.env.SMTP_EMAIL },
       to: [{ email: toEmail }],
-      subject: 'Your Ember Arena password reset code',
+      subject,
       htmlContent: `
         <div style="font-family:sans-serif; max-width:420px;">
           <h2 style="color:#FF6B1A;">Ember Arena</h2>
-          <p>Your OTP to reset your password is:</p>
+          <p>${intro}</p>
           <p style="font-size:32px; font-weight:bold; letter-spacing:6px;">${otp}</p>
           <p style="color:#666; font-size:13px;">This code expires in 10 minutes. If you didn't request this, you can safely ignore this email.</p>
         </div>

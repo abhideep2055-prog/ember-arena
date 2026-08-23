@@ -97,6 +97,14 @@ function injectAuthModal(){
           <button type="submit" class="btn btn-primary" style="width:100%;">Create account</button>
           <div class="form-msg" id="signupMsg"></div>
         </form>
+        <form id="signupVerifyForm" class="auth-form" style="display:none;">
+          <p style="color:var(--ash); font-size:12px; margin-bottom:4px;">Enter the codes sent to your email and phone.</p>
+          <div class="form-row"><label for="signupEmailOtp">Email code</label><input type="text" id="signupEmailOtp" maxlength="6" required></div>
+          <div class="form-row"><label for="signupPhoneOtp">Phone code</label><input type="text" id="signupPhoneOtp" maxlength="6" required></div>
+          <input type="hidden" id="signupVerifyEmail">
+          <button type="submit" class="btn btn-primary" style="width:100%;">Verify & create account</button>
+          <div class="form-msg" id="signupVerifyMsg"></div>
+        </form>
         <div id="forgotSection" style="display:none;">
           <p style="color:var(--ash); font-size:13px; margin-bottom:16px;">Enter your account email — we'll send a 6-digit code to reset your password.</p>
           <form id="forgotForm" class="auth-form">
@@ -159,21 +167,57 @@ function injectAuthModal(){
     if(btn.disabled) return;
     btn.disabled = true;
     try{
-      const res = await fetch(API_BASE + '/api/auth/signup', {
+      const email = document.getElementById('signupEmail').value.trim();
+      const res = await fetch(API_BASE + '/api/auth/signup/start', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
           ign: document.getElementById('signupIgn').value.trim(),
-          email: document.getElementById('signupEmail').value.trim(),
+          email,
           phone: document.getElementById('signupPhone').value.trim(),
           password: document.getElementById('signupPassword').value
         })
       });
       const data = await res.json();
       if(!res.ok) throw new Error(data.error || 'Sign up failed.');
+      document.getElementById('signupVerifyEmail').dataset.email = email;
+      msg.textContent = '';
+      msg.className = 'form-msg';
+      document.getElementById('signupForm').style.display = 'none';
+      document.getElementById('signupVerifyForm').style.display = 'flex';
+    }catch(err){
+      msg.textContent = err.message;
+      msg.className = 'form-msg err';
+    }finally{
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('signupVerifyForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const msg = document.getElementById('signupVerifyMsg');
+    const btn = this.querySelector('button[type="submit"]');
+    msg.className = 'form-msg'; msg.textContent = '';
+    if(btn.disabled) return;
+    btn.disabled = true;
+    try{
+      const email = document.getElementById('signupVerifyEmail').dataset.email;
+      const res = await fetch(API_BASE + '/api/auth/signup/verify', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          email,
+          emailOtp: document.getElementById('signupEmailOtp').value.trim(),
+          phoneOtp: document.getElementById('signupPhoneOtp').value.trim()
+        })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Verification failed.');
       setSession(data.token, data.player);
       refreshAuthUI();
       closeAuthModal();
+      document.getElementById('signupForm').reset();
       this.reset();
+      document.getElementById('signupForm').style.display = 'flex';
+      document.getElementById('signupVerifyForm').style.display = 'none';
     }catch(err){
       msg.textContent = err.message;
       msg.className = 'form-msg err';
@@ -257,6 +301,7 @@ function switchAuthTab(tab){
   const isForgot = tab === 'forgot';
   document.getElementById('loginForm').style.display = isLogin ? 'flex' : 'none';
   document.getElementById('signupForm').style.display = isSignup ? 'flex' : 'none';
+  document.getElementById('signupVerifyForm').style.display = 'none';
   document.getElementById('forgotSection').style.display = isForgot ? 'block' : 'none';
   document.getElementById('tabLogin').classList.toggle('active', isLogin);
   document.getElementById('tabSignup').classList.toggle('active', isSignup);

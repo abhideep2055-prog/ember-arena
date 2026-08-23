@@ -17,6 +17,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const playerStore = require('./players');
 const mailer = require('./mailer');
+const sms = require('./sms');
+const pendingSignups = require('./pendingSignups');
 const walletStore = require('./wallet');
 const pushStore = require('./push');
 const contentStore = require('./content');
@@ -143,7 +145,7 @@ app.get('/api/news', async (req, res) => {
 
 // ---- Player accounts (signup / login) ----
 
-app.post('/api/auth/signup', async (req, res) => {
+app.post('/api/auth/signup/start', async (req, res) => {
   const { ign, email, phone, password } = req.body || {};
   if (!ign || !email || !phone || !password) {
     return res.status(400).json({ error: 'Name, email, phone, and password are required.' });
@@ -155,20 +157,69 @@ app.post('/api/auth/signup', async (req, res) => {
   if (!emailOk) {
     return res.status(400).json({ error: 'Enter a valid email address.' });
   }
+  if (!mailer.mailEnabled) {
+    return res.status(503).json({ error: 'Email verification is not configured on this server yet.' });
+  }
+  if (!sms.smsEnabled) {
+    return res.status(503).json({ error: 'Phone verification is not configured on this server yet.' });
+  }
   try {
     const existing = await playerStore.findByEmail(email);
     if (existing) {
       return res.status(409).json({ error: 'An account with this email already exists. Try logging in instead.' });
     }
     const passwordHash = await bcrypt.hash(String(password), 10);
-    const player = {
-      id: Date.now().toString(),
+    const emailOtp = String(Math.floor(100000 + Math.random() * 900000));
+    const phoneOtp = String(Math.floor(100000 + Math.random() * 900000));
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    // Send both before committing the pending row, so a failure on either
+    // side doesn't leave the player mid-verification with no way to retry.
+    await mailer.sendOtpEmail(email, emailOtp, 'signup');
+    await sms.sendOtpSms(phone, phoneOtp);
+
+    await pendingSignups.createPendingSignup({
       ign: String(ign).slice(0, 40),
       email: String(email).slice(0, 80),
       phone: String(phone).slice(0, 20),
       passwordHash,
+      emailOtp,
+      phoneOtp,
+      expiresAt,
+    });
+
+    res.json({ success: true, message: 'Enter the codes sent to your email and phone.' });
+  } catch (e) {
+    if (e.message === 'NO_DB') {
+      return res.status(503).json({ error: 'Player accounts need a database connected. Set DATABASE_URL in backend/.env (see README).' });
+    }
+    console.error('Signup start error:', e);
+    res.status(500).json({ error: 'Could not send verification codes. Please try again.' });
+  }
+});
+
+app.post('/api/auth/signup/verify', async (req, res) => {
+  const { email, emailOtp, phoneOtp } = req.body || {};
+  if (!email || !emailOtp || !phoneOtp) {
+    return res.status(400).json({ error: 'Enter both the email and phone codes.' });
+  }
+  try {
+    const pending = await pendingSignups.findPendingByEmail(String(email).trim());
+    if (!pending) {
+      return res.status(400).json({ error: 'No pending signup found for this email, or it expired. Please sign up again.' });
+    }
+    if (pending.email_otp !== String(emailOtp).trim() || pending.phone_otp !== String(phoneOtp).trim()) {
+      return res.status(400).json({ error: 'One or both codes are incorrect.' });
+    }
+    const player = {
+      id: Date.now().toString(),
+      ign: pending.ign,
+      email: pending.email,
+      phone: pending.phone,
+      passwordHash: pending.password_hash,
     };
     await playerStore.createPlayer(player);
+    await pendingSignups.deletePending(pending.id);
     try {
       await walletStore.adjustBonus(player.id, 10, 'bonus', 'Welcome bonus');
     } catch (bonusErr) {
@@ -178,12 +229,12 @@ app.post('/api/auth/signup', async (req, res) => {
     res.json({ token, player: { id: player.id, ign: player.ign, email: player.email, phone: player.phone } });
   } catch (e) {
     if (e.message === 'NO_DB') {
-      return res.status(503).json({ error: 'Player accounts need a database connected. Set DATABASE_URL in backend/.env (see README).' });
+      return res.status(503).json({ error: 'Player accounts need a database connected.' });
     }
     if (e.code === '23505') {
       return res.status(409).json({ error: 'An account with this email already exists. Try logging in instead.' });
     }
-    console.error('Signup error:', e);
+    console.error('Signup verify error:', e);
     res.status(500).json({ error: 'Could not create your account. Please try again.' });
   }
 });
