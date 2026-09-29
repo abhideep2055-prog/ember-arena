@@ -783,45 +783,74 @@ let scheduleCache = [];
 
 function entryLabel(fee){ return fee > 0 ? '₹' + fee : 'Free'; }
 
+let activeModeTab = 'Solo';
+
+function contestModeGroup(mode){
+  const m = (mode || '').toLowerCase();
+  if(m === 'solo') return 'Solo';
+  if(m === 'duo' || m === 'squad') return 'ClashSquad';
+  return 'All';
+}
+
+function switchModeTab(tab){
+  activeModeTab = tab;
+  document.getElementById('tabSolo').classList.toggle('active', tab === 'Solo');
+  document.getElementById('tabClashSquad').classList.toggle('active', tab === 'ClashSquad');
+  document.getElementById('tabAll').classList.toggle('active', tab === 'All');
+  renderContestCards();
+}
+
+function renderContestCards(){
+  const grid = document.getElementById('contestGrid');
+  if(!grid) return;
+  const filtered = activeModeTab === 'All'
+    ? scheduleCache
+    : scheduleCache.filter(m => contestModeGroup(m.mode) === activeModeTab);
+
+  if(filtered.length === 0){
+    grid.innerHTML = `<div class="contest-empty">No tournaments here yet — check back soon or host your own.</div>`;
+    return;
+  }
+
+  grid.innerHTML = filtered.map(m => {
+    const joined = m.joinedCount || 0;
+    const maxSlots = Number(m.maxSlots) || 0;
+    const isFull = maxSlots > 0 && joined >= maxSlots;
+    const hasHostedPrizes = m.hostedBy && (m.prize1 > 0 || m.prize2 > 0 || m.prize3 > 0);
+    const prizeDisplay = hasHostedPrizes
+      ? `₹${m.prize1||0} / ₹${m.prize2||0} / ₹${m.prize3||0}`
+      : (m.entryFee > 0 ? 'See Prize Pool' : 'Free entry');
+    return `
+      <div class="contest-card">
+        <div class="contest-card-head">
+          <h3>${escapeHtml(m.name)}</h3>
+          <span class="contest-id-badge">ID: ${escapeHtml(m.id).slice(-6).toUpperCase()}</span>
+        </div>
+        <div class="contest-info-grid">
+          <div><span class="contest-info-label">Date</span><span class="contest-info-value">${escapeHtml(m.day)}</span></div>
+          <div><span class="contest-info-label">Time</span><span class="contest-info-value">${escapeHtml(m.time)}</span></div>
+          <div><span class="contest-info-label">Map</span><span class="contest-info-value">${escapeHtml(m.map) || '—'}</span></div>
+        </div>
+        <div class="contest-prize-row">
+          <div><span class="contest-info-label">Prize</span><span class="contest-info-value gold">${prizeDisplay}</span></div>
+          <div><span class="contest-info-label">Join using</span><span class="contest-info-value">${entryLabel(m.entryFee)}</span></div>
+        </div>
+        ${maxSlots > 0 ? `
+          <div>
+            <div class="slot-progress-track"><div class="slot-progress-fill" style="width:${Math.min(100, (joined/maxSlots)*100)}%;"></div></div>
+            <div class="slot-progress-label"><span>${joined} joined</span><span>${Math.max(0, maxSlots - joined)} slots left</span></div>
+          </div>
+        ` : ''}
+        <button type="button" class="contest-join-btn ${isFull ? 'full' : 'available'}" ${isFull ? 'disabled' : ''} onclick="${isFull ? '' : `openJoinModal('${escapeHtml(m.id)}')`}">${isFull ? 'FULL' : 'JOIN NOW'}</button>
+      </div>
+    `;
+  }).join('');
+}
+
 async function initSchedule(){
-  const list = document.getElementById('matchList');
   const schedule = await apiGet('/api/schedule', 'schedule');
   scheduleCache = schedule;
-  if(list){
-    if(schedule.length === 0){
-      list.innerHTML = `<div style="color:var(--ash); text-align:center; padding:32px; background:var(--panel);">No tournaments scheduled right now — check back soon.</div>`;
-    } else {
-      const badgeMap = {
-        live: '<span class="badge badge-live">Live now</span>',
-        open: '<span class="badge badge-open">Registration open</span>',
-        soon: '<span class="badge badge-soon">Opens soon</span>'
-      };
-      list.innerHTML = `<div class="match-row head"><div>Time</div><div>Match</div><div>Map</div><div>Entry</div><div>Status</div></div>` +
-        schedule.map(m => {
-          const hasHostedPrizes = m.hostedBy && (m.prize1 > 0 || m.prize2 > 0 || m.prize3 > 0);
-          const prizeLine = hasHostedPrizes
-            ? `<span class="sub" style="color:var(--gold);">🏆 ₹${m.prize1||0} / ₹${m.prize2||0} / ₹${m.prize3||0}</span>`
-            : '';
-          return `
-          <div class="match-row">
-            <div class="match-date">${m.day}<br>${m.time}</div>
-            <div class="match-name">${escapeHtml(m.name)}<span class="sub">${escapeHtml(m.sub)}</span>${prizeLine}</div>
-            <div>${escapeHtml(m.map)}</div>
-            <div class="mono">${entryLabel(m.entryFee)}</div>
-            <div>${badgeMap[m.status] || badgeMap.soon}</div>
-          </div>
-        `;
-        }).join('');
-    }
-  }
-  const select = document.getElementById('tournament');
-  if(select){
-    select.innerHTML = schedule.length === 0
-      ? `<option value="">No tournaments available yet</option>`
-      : schedule.map(m =>
-          `<option value="${m.id}">${escapeHtml(m.day)} ${escapeHtml(m.time)} — ${escapeHtml(m.name)} (${entryLabel(m.entryFee)})</option>`
-        ).join('');
-  }
+  renderContestCards();
 }
 
 async function initNews(){
@@ -1345,41 +1374,131 @@ async function payHostFeeAndRetry(payload, msg, form){
   };
 }
 
-function initRegForm(){
-  const form = document.getElementById('regForm');
-  if(!form) return;
-  form.addEventListener('submit', async function(e){
+function injectJoinModal(){
+  if(document.getElementById('joinModal')) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div id="joinModal" class="auth-overlay">
+      <div class="auth-modal" style="max-width:380px;">
+        <button class="auth-close" onclick="closeJoinModal()" aria-label="Close">&times;</button>
+        <h3 style="font-size:18px; margin-bottom:4px;" id="joinModalTitle">Join tournament</h3>
+        <p style="color:var(--ash); font-size:12px; margin-bottom:16px;" id="joinModalSub"></p>
+        <form id="joinForm" class="auth-form">
+          <div class="form-row"><label for="joinUid">Free Fire UID</label><input type="text" id="joinUid" placeholder="e.g. 3821049217" required></div>
+          <button type="submit" class="btn btn-primary" style="width:100%;">Confirm & Join</button>
+          <div class="form-msg" id="joinMsg"></div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+  document.getElementById('joinModal').addEventListener('click', function(e){
+    if(e.target === this) closeJoinModal();
+  });
+}
+
+async function openJoinModal(matchId){
+  if(!getToken()){ openAuthModal('login'); return; }
+  injectJoinModal();
+  const match = scheduleCache.find(m => m.id === matchId);
+  document.getElementById('joinModalTitle').textContent = match ? match.name : 'Join tournament';
+  document.getElementById('joinModalSub').textContent = match ? `${match.day} ${match.time} · ${entryLabel(match.entryFee)}` : '';
+  document.getElementById('joinMsg').textContent = '';
+  document.getElementById('joinMsg').className = 'form-msg';
+  document.getElementById('joinModal').style.display = 'flex';
+  const form = document.getElementById('joinForm');
+  form.onsubmit = async function(e){
     e.preventDefault();
-    const msg = document.getElementById('regMsg');
+    const msg = document.getElementById('joinMsg');
     const btn = form.querySelector('button[type="submit"]');
-    msg.className = 'form-msg';
-    msg.textContent = '';
-    if(!getToken()){
-      openAuthModal('login');
-      return;
-    }
+    msg.className = 'form-msg'; msg.textContent = '';
     if(btn.disabled) return;
     btn.disabled = true;
-    const select = document.getElementById('tournament');
-    const matchId = select ? select.value : null;
-    const match = scheduleCache.find(m => m.id === matchId) || null;
-    const payload = {
-      uid: document.getElementById('uid').value.trim(),
-      mode: document.getElementById('mode').value,
-    };
+    const payload = { uid: document.getElementById('joinUid').value.trim(), mode: match ? match.mode : 'Solo' };
     try{
       if(match && match.entryFee > 0){
         await payAndRegister(match, payload, msg, form);
       }else{
         await submitRegistration({ ...payload, matchId }, msg, form);
+        closeJoinModal();
+        initSchedule();
       }
     }catch(err){
-      msg.textContent = err.message || "Couldn't submit right now. Make sure the backend server is running, then try again.";
+      msg.textContent = err.message || "Couldn't submit right now. Try again.";
+      msg.className = 'form-msg err';
+    }finally{
+      btn.disabled = false;
+    }
+  };
+}
+
+function closeJoinModal(){
+  const m = document.getElementById('joinModal');
+  if(m) m.style.display = 'none';
+}
+
+function injectFfUsernameModal(){
+  if(document.getElementById('ffUsernameModal')) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div id="ffUsernameModal" class="auth-overlay">
+      <div class="auth-modal" style="max-width:380px;">
+        <button class="auth-close" onclick="closeFfUsernameModal()" aria-label="Close">&times;</button>
+        <h3 style="font-size:18px; margin-bottom:16px;">Free Fire Username</h3>
+        <form id="ffUsernameForm" class="auth-form">
+          <div class="form-row"><label for="ffUsernameCurrent">Current username</label><input type="text" id="ffUsernameCurrent" disabled placeholder="Not set yet"></div>
+          <div class="form-row"><label for="ffUsernameNew">New username</label><input type="text" id="ffUsernameNew" placeholder="Enter your Free Fire username" required></div>
+          <button type="submit" class="btn btn-primary" style="width:100%;">Save</button>
+          <div class="form-msg" id="ffUsernameMsg"></div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+  document.getElementById('ffUsernameModal').addEventListener('click', function(e){
+    if(e.target === this) closeFfUsernameModal();
+  });
+  document.getElementById('ffUsernameForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const msg = document.getElementById('ffUsernameMsg');
+    const btn = this.querySelector('button[type="submit"]');
+    msg.className = 'form-msg'; msg.textContent = '';
+    if(btn.disabled) return;
+    btn.disabled = true;
+    try{
+      const res = await fetch(API_BASE + '/api/profile/ff-username', {
+        method:'POST', headers:{'Content-Type':'application/json', 'Authorization': 'Bearer ' + getToken()},
+        body: JSON.stringify({ ffUsername: document.getElementById('ffUsernameNew').value.trim() })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'Could not save.');
+      msg.textContent = 'Saved!';
+      msg.className = 'form-msg ok';
+      document.getElementById('ffUsernameCurrent').value = document.getElementById('ffUsernameNew').value.trim();
+      document.getElementById('ffUsernameNew').value = '';
+    }catch(err){
+      msg.textContent = err.message;
       msg.className = 'form-msg err';
     }finally{
       btn.disabled = false;
     }
   });
+}
+
+async function openFfUsernameModal(){
+  if(!getToken()){ openAuthModal('login'); return; }
+  injectFfUsernameModal();
+  document.getElementById('ffUsernameModal').style.display = 'flex';
+  try{
+    const res = await fetch(API_BASE + '/api/profile/ff-username', { headers:{ 'Authorization': 'Bearer ' + getToken() } });
+    const data = await res.json();
+    if(res.ok) document.getElementById('ffUsernameCurrent').value = data.ffUsername || '';
+  }catch(e){}
+}
+
+function closeFfUsernameModal(){
+  const m = document.getElementById('ffUsernameModal');
+  if(m) m.style.display = 'none';
 }
 
 async function checkMaintenance(){
@@ -1416,8 +1535,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   initNews();
   initSocialLinks();
   initPrizePool();
-  initRegForm();
-  injectAuthModal();
+    injectAuthModal();
   refreshAuthUI();
   registerServiceWorker();
   injectChatbot();

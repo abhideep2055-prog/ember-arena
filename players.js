@@ -76,6 +76,18 @@ async function isBlocked(playerId) {
   return res.rows[0].blocked;
 }
 
+async function setFfUsername(playerId, ffUsername) {
+  if (!pool) throw new Error('NO_DB');
+  await pool.query(`UPDATE players SET ff_username = $1 WHERE id = $2`, [ffUsername, playerId]);
+}
+
+async function getFfUsername(playerId) {
+  if (!pool) throw new Error('NO_DB');
+  const res = await pool.query(`SELECT ff_username FROM players WHERE id = $1`, [playerId]);
+  if (res.rowCount === 0) return null;
+  return res.rows[0].ff_username;
+}
+
 module.exports = {
   createPlayer,
   findByEmail,
@@ -87,4 +99,6 @@ module.exports = {
   countPlayers,
   setBlocked,
   isBlocked,
+  setFfUsername,
+  getFfUsername,
 };

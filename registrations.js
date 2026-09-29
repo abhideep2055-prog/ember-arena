@@ -86,6 +86,25 @@ async function playerIdsForMatch(matchId) {
   }
 }
 
+async function countsByMatch() {
+  if (pool) {
+    const res = await pool.query(
+      `SELECT match_id AS "matchId", COUNT(*)::int AS count FROM registrations WHERE match_id IS NOT NULL GROUP BY match_id`
+    );
+    const map = {};
+    for (const row of res.rows) map[row.matchId] = row.count;
+    return map;
+  } else {
+    const regs = readJsonRegs();
+    const map = {};
+    for (const r of regs) {
+      if (!r.matchId) continue;
+      map[r.matchId] = (map[r.matchId] || 0) + 1;
+    }
+    return map;
+  }
+}
+
 async function findByPlayer(playerId) {
   if (pool) {
     const res = await pool.query(
@@ -121,6 +140,7 @@ module.exports = {
   countRegistrations,
   allRegistrations,
   playerIdsForMatch,
+  countsByMatch,
   findByPlayer,
   confirmPayment,
 };

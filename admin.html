@@ -136,6 +136,16 @@
             </select>
           </div>
         </div>
+        <div class="form-2col">
+          <div class="form-row"><label for="mMode">Mode</label>
+            <select id="mMode">
+              <option value="Solo">Solo</option>
+              <option value="Duo">Duo</option>
+              <option value="Squad">Squad</option>
+            </select>
+          </div>
+          <div class="form-row"><label for="mMaxSlots">Max slots (0 = unlimited)</label><input type="number" id="mMaxSlots" min="0" value="0"></div>
+        </div>
         <button type="submit" class="btn btn-primary" style="width:100%;">Add tournament</button>
         <div class="form-msg" id="matchMsg"></div>
       </form>
@@ -511,6 +521,8 @@
       map: document.getElementById('mMap').value.trim(),
       entryFee: Number(document.getElementById('mFee').value) || 0,
       status: document.getElementById('mStatus').value,
+      mode: document.getElementById('mMode').value,
+      maxSlots: Number(document.getElementById('mMaxSlots').value) || 0,
     };
     scheduleCache.push(newMatch);
     try{

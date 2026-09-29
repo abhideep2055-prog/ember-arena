@@ -91,66 +91,24 @@
 <section id="register">
   <div class="wrap">
     <div class="section-head">
-      <div><span class="tag">// registration</span><h2>Enter the arena</h2></div>
-      <p>Fill in your squad details to lock your slot for the next tournament. Confirmation is instant.</p>
+      <div><span class="tag">// tournaments</span><h2>Enter the arena</h2></div>
+      <p>Pick your mode, find an open slot, and join in one tap.</p>
     </div>
-    <div class="reg-grid">
-      <div class="reg-card">
-        <div class="form-msg" id="authNotice"></div>
-        <form id="regForm">
-          <div class="form-row">
-            <label for="tournament">Tournament</label>
-            <select id="tournament"></select>
-          </div>
-          <div class="form-2col">
-            <div class="form-row">
-              <label for="uid">Free Fire UID</label>
-              <input type="text" id="uid" placeholder="e.g. 3821049217" required>
-            </div>
-            <div class="form-row">
-              <label for="mode">Mode</label>
-              <select id="mode">
-                <option>Solo</option>
-                <option>Duo</option>
-                <option>Squad (4)</option>
-              </select>
-            </div>
-          </div>
-          <button type="submit" class="btn btn-primary" style="width:100%; margin-top:8px;">Confirm registration</button>
-          <div class="form-msg" id="regMsg"></div>
-        </form>
-      </div>
-      <div class="why-list">
-        <div class="why-item">
-          <div class="why-num mono">01</div>
-          <div><h3>Instant slot lock</h3><p>Your squad's spot is confirmed the moment you register — no waitlists.</p></div>
-        </div>
-        <div class="why-item">
-          <div class="why-num mono">02</div>
-          <div><h3>Verified fair play</h3><p>Every match is monitored for emulator and teaming violations. See our <a href="rules.html" style="color:var(--ember)">fair play policy</a>.</p></div>
-        </div>
-        <div class="why-item">
-          <div class="why-num mono">03</div>
-          <div><h3>Same-day payouts</h3><p>Winning squads receive prize money within 24 hours of the final match.</p></div>
-        </div>
-        <div class="why-item">
-          <div class="why-num mono">04</div>
-          <div><h3>Room ID, right on the site</h3><p>Custom room ID and password unlock in "My Matches" and via push notification 10 minutes before kickoff.</p></div>
-        </div>
-      </div>
+    <div class="contest-actions">
+      <button class="btn btn-ghost" onclick="openMyMatches()">MY CONTEST</button>
+      <button class="btn btn-primary" onclick="openHostModal()">HOST PRIVATE CONTEST</button>
     </div>
+    <a href="#" class="ff-username-link" onclick="openFfUsernameModal(); return false;">Add / Change Free Fire Username</a>
+    <div class="mode-tabs">
+      <button class="mode-tab active" id="tabSolo" onclick="switchModeTab('Solo')">Solo</button>
+      <button class="mode-tab" id="tabClashSquad" onclick="switchModeTab('ClashSquad')">Clash Squad</button>
+      <button class="mode-tab" id="tabAll" onclick="switchModeTab('All')">Tournaments</button>
+    </div>
+    <div class="contest-grid" id="contestGrid"></div>
   </div>
 </section>
 
-<section id="schedule">
-  <div class="wrap">
-    <div class="section-head">
-      <div><span class="tag">// mission briefing</span><h2>Match schedule</h2></div>
-      <p>All times IST. Room IDs are shared 10 minutes before each match starts.</p>
-    </div>
-    <div class="match-list" id="matchList"></div>
-  </div>
-</section>
+<section id="schedule" style="display:none;"></section>
 
 <section id="leaderboard">
   <div class="wrap">

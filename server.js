@@ -137,7 +137,11 @@ app.get('/api/leaderboard', async (req, res) => {
 });
 app.get('/api/schedule', async (req, res) => {
   const schedule = await contentStore.getContent('schedule', []);
-  res.json(schedule.filter(m => m.approvalStatus !== 'pending'));
+  const counts = await regStore.countsByMatch();
+  const visible = schedule
+    .filter(m => m.approvalStatus !== 'pending')
+    .map(m => ({ ...m, joinedCount: counts[m.id] || 0 }));
+  res.json(visible);
 });
 app.get('/api/news', async (req, res) => {
   res.json(await contentStore.getContent('news', []));
@@ -269,6 +273,30 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ player: { id: req.player.sub, ign: req.player.ign, email: req.player.email, phone: req.player.phone } });
+});
+
+app.get('/api/profile/ff-username', requireAuth, async (req, res) => {
+  try {
+    const ffUsername = await playerStore.getFfUsername(req.player.sub);
+    res.json({ ffUsername: ffUsername || '' });
+  } catch (e) {
+    if (e.message === 'NO_DB') return res.status(503).json({ error: 'Player accounts need a database connected.' });
+    res.status(500).json({ error: 'Could not load username.' });
+  }
+});
+
+app.post('/api/profile/ff-username', requireAuth, async (req, res) => {
+  const { ffUsername } = req.body || {};
+  if (!ffUsername || !String(ffUsername).trim()) {
+    return res.status(400).json({ error: 'Enter a Free Fire username.' });
+  }
+  try {
+    await playerStore.setFfUsername(req.player.sub, String(ffUsername).trim().slice(0, 40));
+    res.json({ success: true });
+  } catch (e) {
+    if (e.message === 'NO_DB') return res.status(503).json({ error: 'Player accounts need a database connected.' });
+    res.status(500).json({ error: 'Could not save username.' });
+  }
 });
 
 // ---- Password reset (email OTP) ----
