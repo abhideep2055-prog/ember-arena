@@ -76,6 +76,12 @@ async function requireAuth(req, res, next) {
   next();
 }
 
+// Safety net: log instead of crashing the whole server on an unexpected
+// async error (e.g. a database hiccup) anywhere in the app.
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection (server stayed up):', err && err.message ? err.message : err);
+});
+
 const app = express();
 // Render (and most hosts) sit behind a reverse proxy. Without this,
 // express-rate-limit can't safely read the real client IP from
@@ -137,7 +143,12 @@ app.get('/api/leaderboard', async (req, res) => {
 });
 app.get('/api/schedule', async (req, res) => {
   const schedule = await contentStore.getContent('schedule', []);
-  const counts = await regStore.countsByMatch();
+  let counts = {};
+  try {
+    counts = await regStore.countsByMatch();
+  } catch (e) {
+    console.error('countsByMatch error:', e.message);
+  }
   const visible = schedule
     .filter(m => m.approvalStatus !== 'pending')
     .map(m => ({ ...m, joinedCount: counts[m.id] || 0 }));
@@ -150,9 +161,9 @@ app.get('/api/news', async (req, res) => {
 // ---- Player accounts (signup / login) ----
 
 app.post('/api/auth/signup/start', async (req, res) => {
-  const { ign, email, phone, password } = req.body || {};
-  if (!ign || !email || !phone || !password) {
-    return res.status(400).json({ error: 'Name, email, phone, and password are required.' });
+  const { ign, email, password } = req.body || {};
+  if (!ign || !email || !password) {
+    return res.status(400).json({ error: 'Name, email, and password are required.' });
   }
   if (String(password).length < 6) {
     return res.status(400).json({ error: 'Password must be at least 6 characters.' });
@@ -164,9 +175,6 @@ app.post('/api/auth/signup/start', async (req, res) => {
   if (!mailer.mailEnabled) {
     return res.status(503).json({ error: 'Email verification is not configured on this server yet.' });
   }
-  if (!sms.smsEnabled) {
-    return res.status(503).json({ error: 'Phone verification is not configured on this server yet.' });
-  }
   try {
     const existing = await playerStore.findByEmail(email);
     if (existing) {
@@ -174,52 +182,48 @@ app.post('/api/auth/signup/start', async (req, res) => {
     }
     const passwordHash = await bcrypt.hash(String(password), 10);
     const emailOtp = String(Math.floor(100000 + Math.random() * 900000));
-    const phoneOtp = String(Math.floor(100000 + Math.random() * 900000));
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Send both before committing the pending row, so a failure on either
-    // side doesn't leave the player mid-verification with no way to retry.
     await mailer.sendOtpEmail(email, emailOtp, 'signup');
-    await sms.sendOtpSms(phone, phoneOtp);
 
     await pendingSignups.createPendingSignup({
       ign: String(ign).slice(0, 40),
       email: String(email).slice(0, 80),
-      phone: String(phone).slice(0, 20),
+      phone: '',
       passwordHash,
       emailOtp,
-      phoneOtp,
+      phoneOtp: '',
       expiresAt,
     });
 
-    res.json({ success: true, message: 'Enter the codes sent to your email and phone.' });
+    res.json({ success: true, message: 'Enter the code sent to your email.' });
   } catch (e) {
     if (e.message === 'NO_DB') {
       return res.status(503).json({ error: 'Player accounts need a database connected. Set DATABASE_URL in backend/.env (see README).' });
     }
     console.error('Signup start error:', e);
-    res.status(500).json({ error: 'Could not send verification codes. Please try again.' });
+    res.status(500).json({ error: 'Could not send verification code. Please try again.' });
   }
 });
 
 app.post('/api/auth/signup/verify', async (req, res) => {
-  const { email, emailOtp, phoneOtp } = req.body || {};
-  if (!email || !emailOtp || !phoneOtp) {
-    return res.status(400).json({ error: 'Enter both the email and phone codes.' });
+  const { email, emailOtp } = req.body || {};
+  if (!email || !emailOtp) {
+    return res.status(400).json({ error: 'Enter the code sent to your email.' });
   }
   try {
     const pending = await pendingSignups.findPendingByEmail(String(email).trim());
     if (!pending) {
       return res.status(400).json({ error: 'No pending signup found for this email, or it expired. Please sign up again.' });
     }
-    if (pending.email_otp !== String(emailOtp).trim() || pending.phone_otp !== String(phoneOtp).trim()) {
-      return res.status(400).json({ error: 'One or both codes are incorrect.' });
+    if (pending.email_otp !== String(emailOtp).trim()) {
+      return res.status(400).json({ error: 'That code is incorrect.' });
     }
     const player = {
       id: Date.now().toString(),
       ign: pending.ign,
       email: pending.email,
-      phone: pending.phone,
+      phone: pending.phone || '',
       passwordHash: pending.password_hash,
     };
     await playerStore.createPlayer(player);

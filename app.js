@@ -92,15 +92,13 @@ function injectAuthModal(){
         <form id="signupForm" class="auth-form" style="display:none;">
           <div class="form-row"><label for="signupIgn">In-game name</label><input type="text" id="signupIgn" required></div>
           <div class="form-row"><label for="signupEmail">Email</label><input type="email" id="signupEmail" required></div>
-          <div class="form-row"><label for="signupPhone">Phone number</label><input type="tel" id="signupPhone" required></div>
           <div class="form-row"><label for="signupPassword">Password</label><input type="password" id="signupPassword" required minlength="6"></div>
           <button type="submit" class="btn btn-primary" style="width:100%;">Create account</button>
           <div class="form-msg" id="signupMsg"></div>
         </form>
         <form id="signupVerifyForm" class="auth-form" style="display:none;">
-          <p style="color:var(--ash); font-size:12px; margin-bottom:4px;">Enter the codes sent to your email and phone.</p>
+          <p style="color:var(--ash); font-size:12px; margin-bottom:4px;">Enter the code sent to your email.</p>
           <div class="form-row"><label for="signupEmailOtp">Email code</label><input type="text" id="signupEmailOtp" maxlength="6" required></div>
-          <div class="form-row"><label for="signupPhoneOtp">Phone code</label><input type="text" id="signupPhoneOtp" maxlength="6" required></div>
           <input type="hidden" id="signupVerifyEmail">
           <button type="submit" class="btn btn-primary" style="width:100%;">Verify & create account</button>
           <div class="form-msg" id="signupVerifyMsg"></div>
@@ -173,7 +171,6 @@ function injectAuthModal(){
         body: JSON.stringify({
           ign: document.getElementById('signupIgn').value.trim(),
           email,
-          phone: document.getElementById('signupPhone').value.trim(),
           password: document.getElementById('signupPassword').value
         })
       });
@@ -206,7 +203,6 @@ function injectAuthModal(){
         body: JSON.stringify({
           email,
           emailOtp: document.getElementById('signupEmailOtp').value.trim(),
-          phoneOtp: document.getElementById('signupPhoneOtp').value.trim()
         })
       });
       const data = await res.json();
