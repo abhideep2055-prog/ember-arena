@@ -22,6 +22,7 @@ const pendingSignups = require('./pendingSignups');
 const walletStore = require('./wallet');
 const pushStore = require('./push');
 const contentStore = require('./content');
+const { isExpired } = require('./scheduleUtils');
 
 let webpush;
 try { webpush = require('web-push'); } catch (e) { webpush = null; }
@@ -134,7 +135,7 @@ app.get('/api/stats', async (req, res) => {
     playersRegistered: BASE_PLAYER_COUNT + total,
     totalUsers,
     prizePool: prizePool.total || 0,
-    matchesToday: schedule.filter(m => m.day === 'TODAY' && m.approvalStatus !== 'pending').length,
+    matchesToday: schedule.filter(m => m.day === 'TODAY' && m.approvalStatus !== 'pending' && !isExpired(m)).length,
   });
 });
 
@@ -150,7 +151,7 @@ app.get('/api/schedule', async (req, res) => {
     console.error('countsByMatch error:', e.message);
   }
   const visible = schedule
-    .filter(m => m.approvalStatus !== 'pending')
+    .filter(m => m.approvalStatus !== 'pending' && !isExpired(m))
     .map(m => ({ ...m, joinedCount: counts[m.id] || 0 }));
   res.json(visible);
 });
@@ -864,6 +865,10 @@ app.post('/api/admin/leaderboard', async (req, res) => {
   if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Expected an array of squads.' });
   await contentStore.setContent('leaderboard', req.body);
   res.json({ success: true });
+});
+
+app.get('/api/admin/schedule', async (req, res) => {
+  res.json(await contentStore.getContent('schedule', []));
 });
 
 app.post('/api/admin/schedule', async (req, res) => {

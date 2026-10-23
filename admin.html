@@ -439,7 +439,7 @@
 
   async function loadSchedule(){
     try{
-      const res = await fetch(API_BASE + '/api/schedule');
+      const res = await fetch(API_BASE + '/api/admin/schedule', { headers:{'x-admin-key': getKey()} });
       scheduleCache = await res.json();
       renderMatches();
     }catch(e){
@@ -449,6 +449,18 @@
 
   function entryLabel(fee){ return fee > 0 ? '₹' + fee : 'Free'; }
 
+  // Mirrors the server rule: hidden from the public site 12h after start,
+  // or once the start day (IST) has passed.
+  function isExpiredClient(m){
+    if(!m.startAt) return false;
+    const start = new Date(m.startAt).getTime();
+    if(isNaN(start)) return false;
+    const now = Date.now();
+    if(now - start >= 12*3600*1000) return true;
+    const IST = 5.5*3600*1000;
+    return Math.floor((start+IST)/86400000) < Math.floor((now+IST)/86400000);
+  }
+
   function renderMatches(){
     document.getElementById('matchBody').innerHTML = scheduleCache.map((m, i) => `
       <tr>
@@ -456,7 +468,7 @@
         <td>${escapeHtml(m.name)}<br><span style="color:var(--ash); font-size:11px;">${escapeHtml(m.sub) || ''}</span></td>
         <td>${escapeHtml(m.map) || ''}</td>
         <td class="mono">${entryLabel(m.entryFee)}</td>
-        <td>${escapeHtml(m.status)}</td>
+        <td>${escapeHtml(m.status)}${isExpiredClient(m) ? '<br><span class="badge badge-soon" style="margin-top:4px;">Hidden (ended)</span>' : ''}</td>
         <td class="mono" style="font-size:11px;">${m.roomId ? `${escapeHtml(m.roomId)} / ${escapeHtml(m.roomPassword) || '—'}` : '<span style="color:var(--ash);">Not set</span>'}<br><button type="button" class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="setRoomDetails('${escapeHtml(m.id)}')">Set</button></td>
         <td><button type="button" class="btn btn-ghost btn-sm" onclick="deleteMatch(${i})">Delete</button></td>
       </tr>
