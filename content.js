@@ -22,37 +22,56 @@ function writeJsonFile(file, data) {
   fs.writeFileSync(path.join(DATA_DIR, file), JSON.stringify(data, null, 2));
 }
 
-// Reads a piece of site content (schedule / leaderboard / news) by key.
-// With Postgres connected, this is stored permanently and survives redeploys.
-// Without it, falls back to a local JSON file — fine for local dev, but note
-// that file resets on most hosting platforms' redeploys (this is exactly the
-// bug that made demo tournaments/leaderboard keep reappearing).
-async function getContent(key, fallback) {
-  if (pool) {
+// In-memory cache of site content (schedule, leaderboard, news, ...).
+// Why: every page view used to fire ~8 database queries, and the notification
+// scheduler fired one every minute. That kept the free Postgres awake around the
+// clock and burned through its monthly quota. Now reads are served from memory
+// for a short time, writes update the cache immediately, and if the database is
+// down we keep serving the last known copy instead of an error.
+const cache = new Map(); // key -> { value, at }
+const DEFAULT_MAX_AGE_MS = 30 * 1000;
+const clone = (v) => JSON.parse(JSON.stringify(v));
+
+async function getContent(key, fallback, maxAgeMs = DEFAULT_MAX_AGE_MS) {
+  if (!pool) return readJsonFile(`${key}.json`, fallback);
+
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < maxAgeMs) return clone(hit.value);
+
+  try {
     const res = await pool.query(`SELECT value FROM site_content WHERE key = $1`, [key]);
+    let value;
     if (res.rowCount === 0) {
       await pool.query(
         `INSERT INTO site_content (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`,
         [key, JSON.stringify(fallback)]
       );
-      return fallback;
+      value = fallback;
+    } else {
+      value = res.rows[0].value;
     }
-    return res.rows[0].value;
-  } else {
-    return readJsonFile(`${key}.json`, fallback);
+    cache.set(key, { value: clone(value), at: Date.now() });
+    return clone(value);
+  } catch (e) {
+    if (hit) {
+      console.error(`DB read failed for "${key}", serving last known copy:`, e.message);
+      return clone(hit.value);
+    }
+    throw e;
   }
 }
 
 async function setContent(key, value) {
-  if (pool) {
-    await pool.query(
-      `INSERT INTO site_content (key, value, updated_at) VALUES ($1, $2, now())
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-      [key, JSON.stringify(value)]
-    );
-  } else {
+  if (!pool) {
     writeJsonFile(`${key}.json`, value);
+    return;
   }
+  await pool.query(
+    `INSERT INTO site_content (key, value, updated_at) VALUES ($1, $2, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    [key, JSON.stringify(value)]
+  );
+  cache.set(key, { value: clone(value), at: Date.now() });
 }
 
 module.exports = { getContent, setContent };

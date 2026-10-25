@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+require('express-async-errors');
 const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
@@ -988,10 +989,10 @@ app.post('/api/admin/payment-settings', async (req, res) => {
 // Note: on Render's free tier the service sleeps when idle, so this only
 // fires while the app happens to be awake (e.g. someone has the site open).
 
-async function checkUpcomingMatchesAndNotify() {
+async function checkUpcomingMatchesAndNotifyInner() {
   if (!pushEnabled) return;
   const now = Date.now();
-  const schedule = await contentStore.getContent('schedule', []);
+  const schedule = await contentStore.getContent('schedule', [], 60 * 60 * 1000);
   for (const match of schedule) {
     if (!match.startAt) continue;
     const startTime = new Date(match.startAt).getTime();
@@ -1037,9 +1038,31 @@ async function checkUpcomingMatchesAndNotify() {
   }
 }
 
+async function checkUpcomingMatchesAndNotify() {
+  try {
+    await checkUpcomingMatchesAndNotifyInner();
+  } catch (e) {
+    console.error('Notification check failed:', e.message);
+  }
+}
+
 if (pushEnabled) {
   setInterval(checkUpcomingMatchesAndNotify, 60 * 1000);
 }
+
+// Any error thrown inside a route (e.g. the database unreachable or over its
+// quota) lands here, so visitors get a quick, clear JSON error instead of a
+// request that hangs forever.
+app.use((err, req, res, next) => {
+  console.error('Request error on', req.method, req.path, '-', err && err.message ? err.message : err);
+  if (res.headersSent) return next(err);
+  const quota = /quota/i.test((err && err.message) || '');
+  res.status(quota ? 503 : 500).json({
+    error: quota
+      ? 'The database is temporarily over its usage limit. Please try again later.'
+      : 'Something went wrong. Please try again.',
+  });
+});
 
 const PORT = process.env.PORT || 3000;
 

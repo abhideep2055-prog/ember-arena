@@ -333,6 +333,12 @@
       const res = await fetch(API_BASE + '/api/admin/registrations', { headers:{'x-admin-key': key} });
       if(res.status === 401){ doLogout(); return; }
       const data = await res.json();
+      if(!res.ok || !Array.isArray(data)){
+        document.getElementById('loginView').style.display = 'none';
+        document.getElementById('dashView').style.display = 'block';
+        document.getElementById('countLabel').textContent = (data && data.error) ? data.error : 'Could not load registrations.';
+        return;
+      }
       document.getElementById('loginView').style.display = 'none';
       document.getElementById('dashView').style.display = 'block';
       loadMaintenanceStatus();
